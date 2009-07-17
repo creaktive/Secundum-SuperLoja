@@ -9,7 +9,7 @@ EXEMPLOS:
 
 Se sua loja for 'loja.minhaloja.com', acesse http://loja.minhaloja.com/loja4.php
 Se sua loja for 'minhaloja.com/loja', acesse http://minhaloja.com/loja/loja4.php
-Preencha o CPF no campo (apenas os 11 números) e clique no botão.
+Preencha o formulário e clique no botão.
 Pronto, sua loja está instalada!
 
 Qualquer dúvida ou problema sinta-se à vontade em falar:

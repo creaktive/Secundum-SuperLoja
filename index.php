@@ -1,9 +1,14 @@
 <?php
 
-define('CPF',		'@CPF@');
-define('BASE',		'@base@');
+$CONFIG = array(
+	'logo'		=> '@IMG@',
+	'IDML'		=> '@IDML@',
+	'URL'		=> '@URL@',
+	'URI'		=> '@URI@',
+	'pvt'		=> '@PVT@',
+);
 
-define('VERSAO',	'4.1');
+define('VERSAO',	'4.5');
 define('CLIQUE',	'http://clique.secundum.com.br/');
 define('API',		'sistema.php');
 
@@ -13,20 +18,14 @@ define('CACHE_AUTO',CACHE . DIRECTORY_SEPARATOR . 'auto');
 define('CACHE_EXP',	3600*24*5);
 define('CACHE_LOCK',CACHE . DIRECTORY_SEPARATOR . 'lock');
 define('CLEANUP',	'cleanup');
-define('IMAGEM',	'imagem');
 define('LAYOUT',	'layout');
 define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'template.html');
 
 $SUFFIX = array('ven','vis','car','bar','mel');
 
-if (CPF == '123456789') {
-	error_reporting(1);
-	define('SERVIDOR', 'http://localhost/sis4/');
-} else {
-	error_reporting(0);
-	$ips = gethostbynamel('secundum.com.br');
-	define('SERVIDOR', sprintf('http://%s/sis4/', $ips[rand(0, count($ips) - 1)]));
-}
+error_reporting(0);
+$ips = gethostbynamel('secundum.com.br');
+define('SERVIDOR', sprintf('http://%s/sis4/', $ips[rand(0, count($ips) - 1)]));
 
 if (!function_exists('file_put_contents')) {
 	function file_put_contents($filename, $data) {
@@ -75,16 +74,16 @@ $uri	= $_GET['uri'];
 if ($query) {
 	$query = do_query($query);
 	if (empty($query)) {
-		header('Location: ' . BASE);
+		header('Location: ' . $CONFIG['URI']);
 	} else {
 		$query = str_replace(' ', '_', $query);
-		header('Location: ' . BASE . $query . '/');
+		header('Location: ' . $CONFIG['URI'] . $query . '/');
 	}
 	exit();
 }
 
 $uri = normalize($uri);
-$uri = preg_replace('%^' . preg_quote(substr(BASE, 1)) . '%i', '', $uri);
+$uri = preg_replace('%^' . preg_quote(substr($CONFIG['URI'], 1)) . '%i', '', $uri);
 $uri = preg_replace('%\?.*$%', '', $uri);
 $params = array();
 foreach (preg_split('%/%', $uri, 3, PREG_SPLIT_NO_EMPTY) as $param) {
@@ -93,7 +92,7 @@ foreach (preg_split('%/%', $uri, 3, PREG_SPLIT_NO_EMPTY) as $param) {
 }
 $localpath = implode(DIRECTORY_SEPARATOR, $params);
 
-srand(crc32(implode('|', array(dirname(__FILE__), $localpath, CPF))));
+srand(crc32(implode('|', array(dirname(__FILE__), $localpath, $CONFIG['URL']))));
 
 mkdir_chmod(LAYOUT, 0755);
 $TPLstat = @stat(TEMPLATE);
@@ -114,25 +113,6 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 
 	fix_header($params[1]);
 	echo $data;
-} elseif (($params[0] == IMAGEM) && !empty($params[1]) && !empty($params[2])) {
-	header('Content-Type: image/jpeg');
-
-	$MLsrv = $params[1];
-	$MLimg = $params[2];
-	$local = IMAGEM . DIRECTORY_SEPARATOR . $MLsrv . '_' . $MLimg;
-
-	if (file_exists($local)) {
-		$jpg = @file_get_contents($local);
-	} else {	
-		$jpg = fetch("http://${MLsrv}.mlapps.com/jm/img?s=MLB&f=${MLimg}.jpg&v=I");
-		if (!empty($jpg)) {
-			mkdir_chmod(IMAGEM, 0755);
-
-			@file_put_contents($local, $jpg);
-			@chmod($local, 0644);
-		}
-	}
-	echo $jpg;
 } elseif ($params[0] == CLEANUP) {
 	header('Cache-Control: no-cache, must-revalidate');
 	header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
@@ -149,18 +129,16 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 		if (!$stamp || ((time() - $stamp) > 3600)) {
 			@touch(CACHE_LOCK);
 			rmdir_r(CACHE, CACHE_EXP);
-			rmdir_r(IMAGEM, CACHE_EXP);
 		}
 	}
-} elseif ($params[0] == CPF) {
+} elseif ($params[0] == $CONFIG['pvt']) {
 	if (!empty($_POST['force'])) {
 		rmdir_r(CACHE, -1);
-		rmdir_r(IMAGEM, -1);
 
-		header('Location: ' . CPF);
+		header('Location: ' . $CONFIG['pvt']);
 	} else {
 		$VERSAO	= VERSAO;
-		$BASE	= BASE;
+		$LOJA	= $CONFIG['URI'];
 		echo <<<HTML
 <!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
 <html>
@@ -169,12 +147,12 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 </head>
 <body>
 <h2>Grave este endere&ccedil;o para poder realizar a manuten&ccedil;&atilde;o da sua loja!</h2>
-<p><a href="$BASE">Ir para a loja V<!-- VER -->$VERSAO<!-- VER --></a></p>
+<p><a href="$LOJA">Ir para a loja V<!-- VER -->$VERSAO<!-- VER --></a></p>
 Estat&iacute;sticas do servidor central:
 <pre>
 HTML;
 
-		fetch(SERVIDOR . API . '?p1=' . CPF, 1);
+		fetch(SERVIDOR . API . '?p1=' . $CONFIG['URL'], 1);
 
 		echo <<<FORM
 </pre>
@@ -217,7 +195,7 @@ FORM;
 	}
 
 	if (empty($xml)) {
-		$xml = fetch(sprintf('%s%s?p1=%s&p2=%s&p3=%s', SERVIDOR, API, CPF, $busca, $filtro));
+		$xml = fetch(sprintf('%s%s?p1=%s&p2=%s&p3=%s', SERVIDOR, API, $CONFIG['URL'], $busca, $filtro));
 
 		$tmp = gzdecode($xml);
 		if (!$tmp) {
@@ -295,7 +273,7 @@ FORM;
 	$chave = do_query(parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY));
 	$TPL = preg_replace('%@SEARCH@%',	"value='" . ($chave ? $chave : 'Escreva aqui sua busca, n&atilde;o use plural\' onfocus=\'this.value=""') . "'", $TPL);
 
-	$logo = sprintf('src="%s" width="%d" height="%d" alt="%s"', $page['partner']['logo']['src'], $page['partner']['logo']['width'], $page['partner']['logo']['height'], $page['partner']['logo']['alt'] ? $page['partner']['logo']['alt'] : '');
+	$logo = sprintf('src="%s" width="%d" height="%d" alt="%s"', $CONFIG['logo'], 780, 120, '');
 	$TPL = preg_replace('%@LOGO@%',		$logo, $TPL);
 
 	if (empty($busca)) {
@@ -306,7 +284,7 @@ FORM;
 	}
 	$descr		= $page['descr'];
 
-	$TPL = preg_replace('%@RELATED_LINK@%', CLIQUE . $page['partner']['IDML'] . '/' . str_replace(' ', '_', $busca), $TPL);
+	$TPL = preg_replace('%@RELATED_LINK@%', CLIQUE . $CONFIG['IDML'] . '/' . str_replace(' ', '_', $busca), $TPL);
 
 	$footer		= "<p>\n";
 	$tmp = $page['footer']['intern']['link'];
@@ -353,11 +331,14 @@ FORM;
 				$itemHTML = $itemTPL;
 				$itemHTML = preg_replace('%@ITEM_TITLE@%',	$item['title'], $itemHTML);
 				$itemHTML = preg_replace('%@ITEM_DESCR@%',	$item_descr, $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_IMG@%',	$page['partner']['store'] . '/' . IMAGEM . '/' . $item['img'], $itemHTML);
+
+				$img = preg_split('%/%', $item['img'], 2, PREG_SPLIT_NO_EMPTY);
+				$itemHTML = preg_replace('%@ITEM_IMG@%',	sprintf('http://%s.mlapps.com/jm/img?s=MLB&f=%s.jpg&v=I', $img[0], $img[1]), $itemHTML);
+
 				$itemHTML = preg_replace('%@ITEM_ALT@%',	$item['imgtitle'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_LINK@%',	CLIQUE . $page['partner']['IDML'] . '/' . $item['link'], $itemHTML);
+				$itemHTML = preg_replace('%@ITEM_LINK@%',	CLIQUE . $CONFIG['IDML'] . '/' . $item['link'], $itemHTML);
 				$itemHTML = preg_replace('%@ITEM_PRICE@%',	$item['price'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_SIMILAR@%',CLIQUE . $page['partner']['IDML'] . '/' . $item['similar'], $itemHTML);
+				$itemHTML = preg_replace('%@ITEM_SIMILAR@%',CLIQUE . $CONFIG['IDML'] . '/' . $item['similar'], $itemHTML);
 
 				$tmp .= $itemHTML;
 			}
@@ -386,10 +367,8 @@ FORM;
 
 	$TPL = preg_replace('%@ROBOTS@%',	$robots, $TPL);
 
-	$TPL = preg_replace('%@ADSENSE@%',	$page['partner']['adsense'], $TPL);
-	$TPL = preg_replace('%@ANALYTICS@%',$page['partner']['analytics'] ? $page['partner']['analytics'] : 0, $TPL);
-	$TPL = preg_replace('%@IDML@%',		$page['partner']['IDML'], $TPL);
-	$TPL = preg_replace('%@LOJA@%',		$page['partner']['store'], $TPL);
+	$TPL = preg_replace('%@IDML@%',		$CONFIG['IDML'], $TPL);
+	$TPL = preg_replace('%@LOJA@%',		$CONFIG['URL'], $TPL);
 
 	echo $TPL;
 }
@@ -510,13 +489,13 @@ function fetch($url, $verbose) {
 }
 
 function externlink($link) {
-	global $page, $SUFFIX;
+	global $page, $SUFFIX, $CONFIG;
 
 	$word = preg_replace('%^.*/%', '', rtrim($link, '/'));
 	$word = str_replace('_', ' ', $word);
 
 	if (!preg_match('%^http://%i', $link)) {
-		$link = $page['partner']['store'] . '/' . $link;
+		$link = $CONFIG['URL'] . '/' . $link;
 	}
 
 	$any = rand(0, count($SUFFIX));

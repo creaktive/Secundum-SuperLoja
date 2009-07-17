@@ -44,7 +44,18 @@ print INST<<HEADER
 <?php
 error_reporting(0);
 
-\$CPF = preg_replace('%[^0-9]%', '', \$_POST['id']);
+function fix_url(\$URL) {
+	if(!empty(\$URL)) {
+		\$URL = rtrim(\$URL, '/');
+		if(substr(\$URL, 0, 7) != 'http://') {
+			\$URL = 'http://' . \$URL;
+		}
+	}
+	return \$URL;
+}
+
+\$_POST['URL'] = fix_url(\$_POST['URL']);
+\$_POST['logo'] = fix_url(\$_POST['logo']);
 
 \$pkg = array(
 HEADER
@@ -60,7 +71,6 @@ print INST<<BODY
 );
 
 function deploy(\$file, \$out, \$gz){
-	global \$CPF;
 	global \$pkg;
 
 	\$md5 = \$pkg[\$file][0];
@@ -68,8 +78,6 @@ function deploy(\$file, \$out, \$gz){
 	\$out = empty(\$out) ? \$file : \$out;
 
 	if(md5(\$buf) == \$md5) {
-		\$buf = preg_replace('%\@CPF\@%s', \$CPF, \$buf);
-
 		\$base = dirname(empty(\$_SERVER['PHP_SELF']) ? \$_SERVER['SCRIPT_NAME'] : \$_SERVER['PHP_SELF']);
 		\$base = str_replace(DIRECTORY_SEPARATOR, '/', \$base);
 		\$base = trim(\$base, '/');
@@ -80,9 +88,12 @@ function deploy(\$file, \$out, \$gz){
 		if(substr(\$dir, -1, 1) != '/') {
 			\$dir .= '/';
 		}
-		\$buf = preg_replace('%\@base\@%s', \$dir, \$buf);
+		\$buf = preg_replace('%\@URI\@%s',	\$dir, \$buf);
 
-		\$buf = preg_replace('%\@root\@%s', preg_quote(dirname(__FILE__)), \$buf);
+		\$buf = preg_replace('%\@IDML\@%s',	\$_POST['IDML'], \$buf);
+		\$buf = preg_replace('%\@IMG\@%s',	\$_POST['logo'], \$buf);
+		\$buf = preg_replace('%\@PVT\@%s',	\$_POST['pvt'], \$buf);
+		\$buf = preg_replace('%\@URL\@%s',	\$_POST['URL'], \$buf);
 
 		if(\$fh = fopen(\$out, 'wb')) {
 			if(!fwrite(\$fh, empty(\$gz) ? \$buf : gzencode(\$buf))) {
@@ -107,7 +118,7 @@ function mkdir_chmod(\$pathname, \$mode) {
 	\@chmod(\$pathname, \$mode);
 }
 
-if(empty(\$CPF)) {
+if(!\$_POST['URL'] || !\$_POST['logo'] || !\$_POST['IDML'] || !\$_POST['pvt']) {
 	if (is_writable(dirname(__FILE__))) {
 		mkdir_chmod('a', 0755);
 		deploy('a/.htaccess');
@@ -126,12 +137,12 @@ var cap=0;
 var php=0;
 function report(id){cap|=id}
 </script>
-</head><body>
+</head>
+<body>
+<iframe frameborder="0" height="1" width="1" scrolling="no" src="a/teste/teste?1"></iframe>
+<iframe frameborder="0" height="1" width="1" scrolling="no" src="b/teste/teste?2"></iframe>
 <h1>Instala&ccedil;&atilde;o da Loja Secundum</h1>
-Verificando as capacidades do servidor...&nbsp;
-<iframe frameborder="1" height="8" width="8" scrolling="no" src="a/teste/teste?1"></iframe>
-<iframe frameborder="1" height="8" width="8" scrolling="no" src="b/teste/teste?2"></iframe>
-&nbsp;(<b>alguns</b> quadrados verdes s&atilde;o suficientes para uma instala&ccedil;&atilde;o funcionar perfeitamente!)<br>
+<h2>Preencha as informa&ccedil;&otilde;es abaixo:</h2>
 HEAD;
 
 		foreach($check as \$f) {
@@ -141,17 +152,56 @@ HEAD;
 		}
 
 		echo <<<FORM
-<form method="post" name="instalar">
-<ol>
-<li><a href="http://tinyurl.com/SuperLojaSecundum" target="_blank">Cadastre</a> a sua SuperLoja</li>
-<li>Insira o seu CPF (o mesmo do cadastro):<br>
-<input type="text" value="" maxlength="11" size="11" name="id" onkeyup="this.value=this.value.replace(/\\D/g,'')"></li>
-<li>
-<input type="hidden" value="0" name="params">
-<input type="submit" value="Instalar!" onclick="document.instalar.params.value=php?0:cap">
-</li>
-<li><b>BOAS VENDAS :D</b></li>
-</ol>
+<form action="" method="post" name="instalar">
+<table border="0" summary="">
+	<tr>
+		<td align="right">
+			Endere&ccedil;o da sua SuperLoja:
+		</td>
+		<td>
+			<input type="text" value="\$_POST[URL]" maxlength="60" size="30" name="URL" onkeyup="this.value=this.value.replace(/[^\\w\\-\\:\\/\\.]/g,'')">
+			<i>(ex.: "http://loja.minhaloja.com/")</i>
+		</td>
+	</tr>
+	<tr>
+		<td align="right">
+			Logotipo da sua SuperLoja (780x120):
+		</td>
+		<td>
+			<input type="text" value="\$_POST[logo]" maxlength="100" size="30" name="logo" onkeyup="this.value=this.value.replace(/[^\\w\\-\\:\\/\\.]/g,'')">
+			<i>(ex.: "http://loja.minhaloja.com/logo.jpg")</i>
+		</td>
+	</tr>
+	<tr>
+		<td align="right">
+			Seu identificador de MercadoS&oacute;cio:
+		</td>
+		<td>
+			<input type="text" value="\$_POST[IDML]" maxlength="8" size="8" name="IDML" onkeyup="this.value=this.value.replace(/\\D/g,'')">
+			<i>(ex.: "5261879")</i>
+		</td>
+	</tr>
+	<tr>
+		<td align="right">
+			Subpasta do painel de controle:<br>
+			<small>
+				(o endere&ccedil;o pelo qual voc&ecirc; poder&aacute;<br>
+				realizar a manuten&ccedil;&atilde;o da sua loja)
+			</small>
+		</td>
+		<td valign="top">
+			<input type="text" value="\$_POST[pvt]" maxlength="30" size="30" name="pvt" onkeyup="this.value=this.value.replace(/[^\\w]/g,'')">
+			<i>(ex.: "controle_minhaloja")</i>
+		</td>
+	</tr>
+	<tr>
+		<td colspan="2" align="center">
+			<input type="hidden" value="0" name="params">
+			<br>
+			<input type="submit" value="Instalar!" onclick="document.instalar.params.value=php?0:cap">
+		</td>
+	</tr>
+</table>
 </form>
 FORM;
 	} else {
@@ -172,15 +222,14 @@ FORM;
 		\@rmdir('imagem');
 
 		mkdir_chmod('cache', 0755);
-		mkdir_chmod('imagem', 0755);
 		mkdir_chmod('layout', 0755);
 
 		if(\$params & 2) {
 			deploy('b/.htaccess', '.htaccess');
-			header('Location: ' . \$CPF);
+			header('Location: ' . \$_POST['pvt']);
 		} elseif(\$params & 1) {
 			deploy('a/.htaccess', '.htaccess');
-			header('Location: ' . \$CPF);
+			header('Location: ' . \$_POST['pvt']);
 		}
 
 		deploy('index.php');

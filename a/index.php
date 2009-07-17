@@ -7,4 +7,4 @@ id = myURL.substring(myURL.indexOf('?') + 1, myURL.length);
 window.parent.report(id);
 //-->
 </script>
-</head><body bgcolor="#00ff00"></body></html>
+</head><body bgcolor="#ffffff"></body></html>
