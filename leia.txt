@@ -2,14 +2,16 @@ COMO INSTALAR:
 
 1) Apague todo o conteúdo da pasta em que esteja localizada a loja;
 2) Caso você esteja utilizando um subdomínio, não apague a pasta 'cgi-bin';
-3) Suba o arquivo 'loja4.php' para a pasta da loja;
+3) Suba o arquivo 'loja5.php' para a pasta da loja;
 4) Acesse pelo browser o endereço da loja seguido do nome do arquivo.
 
 EXEMPLOS:
 
-Se sua loja for 'loja.minhaloja.com', acesse http://loja.minhaloja.com/loja4.php
-Se sua loja for 'minhaloja.com/loja', acesse http://minhaloja.com/loja/loja4.php
-Preencha o formulário e clique no botão.
+Se sua loja for 'loja.minhaloja.com', acesse http://loja.minhaloja.com/loja5.php
+Se sua loja for 'minhaloja.com/loja', acesse http://minhaloja.com/loja/loja5.php
+Clique no botão de instalação. Você será enviado para o painel de controle da
+loja. Preencha os seus dados.
+Especialmente o identificador de MercadoSócios e a sua SENHA.
 Pronto, sua loja está instalada!
 
 Qualquer dúvida ou problema sinta-se à vontade em falar:

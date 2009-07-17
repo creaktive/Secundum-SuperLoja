@@ -4,7 +4,7 @@ use Compress::Zlib;
 use Digest::MD5 qw(md5_hex);
 use MIME::Base64;
 
-use constant OUTPUT => 'loja4.php';
+use constant OUTPUT => 'loja5.php';
 
 
 open (PHP, 'index.php') or die "erro: $!\n";
@@ -21,8 +21,8 @@ $php =~ s%/\*.*?\*/%%gs;
 my %f;
 while ($php =~ m%<\?php(.*?)\?>%gis) {
 	my $block = $1;
-	++$f{lc $1} while $block =~ m%\b([A-Z_0-9]+)\s*\(([^\(\)]*?)\)%gis;
-	delete $f{lc $1} while $block =~ m%\bfunction\s+([A-Z_0-9]+)\s*\(%gis;
+	++$f{lc $1} while $block =~ m%\b([A-Z_0-9\.]+)\s*\(([^\(\)]*?)\)%gis;
+	delete $f{lc $1} while $block =~ m%\bfunction\s+([A-Z_0-9\.]+)\s*\(%gis;
 }
 delete $f{$_} foreach qw(
 	if elseif switch
@@ -31,6 +31,7 @@ delete $f{$_} foreach qw(
 	array empty isset unset
 	echo exit
 	set_time_limit
+	location.href.substr x.replace
 );
 my $check = "array('" . join ("','", sort keys %f) . "')";
 
@@ -44,19 +45,6 @@ print INST<<HEADER
 <?php
 error_reporting(0);
 
-function fix_url(\$URL) {
-	if(!empty(\$URL)) {
-		\$URL = rtrim(\$URL, '/');
-		if(substr(\$URL, 0, 7) != 'http://') {
-			\$URL = 'http://' . \$URL;
-		}
-	}
-	return \$URL;
-}
-
-\$_POST['URL'] = fix_url(\$_POST['URL']);
-\$_POST['logo'] = fix_url(\$_POST['logo']);
-
 \$pkg = array(
 HEADER
 ;
@@ -65,38 +53,39 @@ undeploy('a/.htaccess');
 undeploy('a/index.php');
 undeploy('b/.htaccess');
 undeploy('index.php');
+undeploy('rsslib.php');
+undeploy('feeds.php');
 
 ############ PHP CODE ############
 print INST<<BODY
 );
 
+\$base = dirname(empty(\$_SERVER['PHP_SELF']) ? \$_SERVER['SCRIPT_NAME'] : \$_SERVER['PHP_SELF']);
+\$base = str_replace(DIRECTORY_SEPARATOR, '/', \$base);
+\$base = trim(\$base, '/');
+\$url = 'http://' . \$_SERVER['SERVER_NAME'] . \$base;
+
 function deploy(\$file, \$out, \$gz){
-	global \$pkg;
+	global \$pkg, \$base, \$url;
 
 	\$md5 = \$pkg[\$file][0];
 	\$buf = gzuncompress(base64_decode(\$pkg[\$file][1]));
 	\$out = empty(\$out) ? \$file : \$out;
 
-	if(md5(\$buf) == \$md5) {
-		\$base = dirname(empty(\$_SERVER['PHP_SELF']) ? \$_SERVER['SCRIPT_NAME'] : \$_SERVER['PHP_SELF']);
-		\$base = str_replace(DIRECTORY_SEPARATOR, '/', \$base);
-		\$base = trim(\$base, '/');
-		\$dir = dirname(\$out);
-		\$dir = trim(\$dir, DIRECTORY_SEPARATOR);
-		\$dir = ltrim(\$dir, '.');
-		\$dir = empty(\$base) ? "/\$dir" : "/\$base/\$dir";
-		if(substr(\$dir, -1, 1) != '/') {
-			\$dir .= '/';
+	if (md5(\$buf) == \$md5) {
+		\$uri = dirname(\$out);
+		\$uri = trim(\$uri, DIRECTORY_SEPARATOR);
+		\$uri = ltrim(\$uri, '.');
+		\$uri = empty(\$base) ? "/\$uri" : "/\$base/\$uri";
+		if (substr(\$uri, -1, 1) != '/') {
+			\$uri .= '/';
 		}
-		\$buf = preg_replace('%\@URI\@%s',	\$dir, \$buf);
 
-		\$buf = preg_replace('%\@IDML\@%s',	\$_POST['IDML'], \$buf);
-		\$buf = preg_replace('%\@IMG\@%s',	\$_POST['logo'], \$buf);
-		\$buf = preg_replace('%\@PVT\@%s',	\$_POST['pvt'], \$buf);
-		\$buf = preg_replace('%\@URL\@%s',	\$_POST['URL'], \$buf);
+		\$buf = preg_replace('%\@URI\@%s', \$uri, \$buf);
+		\$buf = preg_replace('%\@URL\@%s', \$url, \$buf);
 
-		if(\$fh = fopen(\$out, 'wb')) {
-			if(!fwrite(\$fh, empty(\$gz) ? \$buf : gzencode(\$buf))) {
+		if (\$fh = fopen(\$out, 'wb')) {
+			if (!fwrite(\$fh, empty(\$gz) ? \$buf : gzencode(\$buf))) {
 				echo "Falha ao gravar dados em \$out: \$php_errormsg";
 				exit;
 			}
@@ -118,7 +107,27 @@ function mkdir_chmod(\$pathname, \$mode) {
 	\@chmod(\$pathname, \$mode);
 }
 
-if(!\$_POST['URL'] || !\$_POST['logo'] || !\$_POST['IDML'] || !\$_POST['pvt']) {
+function fetch(\$addr) {
+	\$ch = curl_init();
+	curl_setopt(\$ch, CURLOPT_URL, \$addr);
+	curl_setopt(\$ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt(\$ch, CURLOPT_CONNECTTIMEOUT, 15);
+	\$buf = curl_exec(\$ch);
+	curl_close(\$ch);
+	return \$buf;
+}
+
+\$params = \$_POST['params'];
+if (!\$params) {
+	echo <<<HEAD
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
+<html><head>
+<title>Instala&ccedil;&atilde;o da SuperLoja Secundum</title>
+</head>
+<body>
+<h1>Instala&ccedil;&atilde;o da SuperLoja Secundum</h1>
+HEAD;
+
 	if (is_writable(dirname(__FILE__))) {
 		mkdir_chmod('a', 0755);
 		deploy('a/.htaccess');
@@ -128,141 +137,73 @@ if(!\$_POST['URL'] || !\$_POST['logo'] || !\$_POST['IDML'] || !\$_POST['pvt']) {
 		deploy('b/.htaccess');
 		deploy('a/index.php', 'b/index.php');
 
-		echo <<<HEAD
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
-<html><head>
-<title>Instala&ccedil;&atilde;o da Loja Secundum</title>
-<script type="text/javascript">
-var cap=0;
-var php=0;
-function report(id){cap|=id}
-</script>
-</head>
-<body>
-<iframe frameborder="0" height="1" width="1" scrolling="no" src="a/teste/teste?1"></iframe>
-<iframe frameborder="0" height="1" width="1" scrolling="no" src="b/teste/teste?2"></iframe>
-<h1>Instala&ccedil;&atilde;o da Loja Secundum</h1>
-<h2>Preencha as informa&ccedil;&otilde;es abaixo:</h2>
-HEAD;
+		if (substr(fetch(\$url . '/a/teste/teste?1'), 0, 4) == 'SEC5') {
+			\$params |= 1;
+		}
+		if (substr(fetch(\$url . '/b/teste/teste?2'), 0, 4) == 'SEC5') {
+			\$params |= 2;
+		}
 
-		foreach($check as \$f) {
-			if(!function_exists(\$f)) {
-				echo "<script type='text/javascript'>--php</script><b>Falha do PHP:</b> fun&ccedil;&atilde;o <code>\$f()</code> indefinida!<br>";
+		function clean(\$dir) {
+			\@unlink(\$dir . '/.htaccess');
+			\@unlink(\$dir . '/index.php');
+			\@rmdir(\$dir);
+		}
+		clean('a');
+		clean('b');
+
+		if (!\$params) {
+			echo "<font color='#a00000'>Foi imposs&iacute;vel utilizar <code>.htaccess</code>!</font><br>";
+		}
+
+		\$php = true;
+		foreach ($check as \$f) {
+			if (!function_exists(\$f)) {
+				echo "<font color='#a00000'><b>Falha do PHP:</b> fun&ccedil;&atilde;o <code>\$f()</code> indefinida!</font><br>";
+				\$php = false;
 			}
 		}
 
-		echo <<<FORM
+		if (\$params && \$php) {
+			echo <<<FORM
 <form action="" method="post" name="instalar">
-<table border="0" summary="">
-	<tr>
-		<td align="right">
-			Endere&ccedil;o da sua SuperLoja:
-		</td>
-		<td>
-			<input type="text" value="\$_POST[URL]" maxlength="60" size="30" name="URL" onkeyup="this.value=this.value.replace(/[^\\w\\-\\:\\/\\.]/g,'')">
-			<i>(ex.: "http://loja.minhaloja.com/")</i>
-		</td>
-	</tr>
-	<tr>
-		<td align="right">
-			Logotipo da sua SuperLoja (780x120):
-		</td>
-		<td>
-			<input type="text" value="\$_POST[logo]" maxlength="100" size="30" name="logo" onkeyup="this.value=this.value.replace(/[^\\w\\-\\:\\/\\.]/g,'')">
-			<i>(ex.: "http://loja.minhaloja.com/logo.jpg")</i>
-		</td>
-	</tr>
-	<tr>
-		<td align="right">
-			Seu identificador de MercadoS&oacute;cio:
-		</td>
-		<td>
-			<input type="text" value="\$_POST[IDML]" maxlength="8" size="8" name="IDML" onkeyup="this.value=this.value.replace(/\\D/g,'')">
-			<i>(ex.: "5261879")</i>
-		</td>
-	</tr>
-	<tr>
-		<td align="right">
-			Subpasta do painel de controle:<br>
-			<small>
-				(o endere&ccedil;o pelo qual voc&ecirc; poder&aacute;<br>
-				realizar a manuten&ccedil;&atilde;o da sua loja)
-			</small>
-		</td>
-		<td valign="top">
-			<input type="text" value="\$_POST[pvt]" maxlength="30" size="30" name="pvt" onkeyup="this.value=this.value.replace(/[^\\w]/g,'')">
-			<i>(ex.: "controle_minhaloja")</i>
-		</td>
-	</tr>
-	<tr>
-		<td colspan="2" align="center">
-			<input type="hidden" value="0" name="params">
-			<br>
-			<input type="submit" value="Instalar!" onclick="document.instalar.params.value=php?0:cap">
-		</td>
-	</tr>
-</table>
+<input type="hidden" value="\$params" name="params">
+<input type="submit" value="Instalar!">
 </form>
 FORM;
+		} else {
+			echo "<h2>Verifique a instala&ccedil;&atilde;o de Apache/PHP do seu servidor:</h2>";
+			phpinfo();
+		}
 	} else {
-		echo "<font color='#a00000'>Aten&ccedil;&atilde;o: a pasta <b>\$where</b> deve ter permiss&atilde;o 0777 ('rwxrwxrwx') <u>durante a instala&ccedil;&atilde;o</u>!</font>";
+		echo "<font color='#a00000'>Aten&ccedil;&atilde;o: a pasta <b>\$base</b> deve ter permiss&atilde;o 0777 ('rwxrwxrwx') <u>durante a instala&ccedil;&atilde;o</u>!</font>";
 	}
 
 	echo "</body></html>";
 } else {
-	\$params = \$_POST['params'];
-	if(\$params) {
-		\@rename('index.php','index.php.BACKUP');
-		\@rename('.htaccess','.htaccess.BACKUP');
+	\@rename('index.php','index.php.BACKUP');
+	\@rename('.htaccess','.htaccess.BACKUP');
 
-		\@unlink('.cache');
-		\@unlink('index.var');
-		\@unlink('index.html.var');
-		\@unlink('imagem/.htaccess');
-		\@rmdir('imagem');
+	mkdir_chmod('cache', 0755);
+	mkdir_chmod('feeds', 0755);
+	mkdir_chmod('layout', 0755);
 
-		mkdir_chmod('cache', 0755);
-		mkdir_chmod('layout', 0755);
-
-		if(\$params & 2) {
-			deploy('b/.htaccess', '.htaccess');
-			header('Location: ' . \$_POST['pvt']);
-		} elseif(\$params & 1) {
-			deploy('a/.htaccess', '.htaccess');
-			header('Location: ' . \$_POST['pvt']);
-		}
-
-		deploy('index.php');
-BODY
-;
-
-############ PHP CODE ############
-print INST<<FOOTER
-		\@unlink(__FILE__);
-	} else {
-		echo<<<WRONG
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
-<html><head>
-<title>Foi imposs&iacute;vel instalar a loja!</title>
-</head><body>
-<h1>Foi imposs&iacute;vel instalar a loja!</h1>
-Verifique as permiss&otilde;es no seu servidor!
-</body></html>
-WRONG
-;
+	if (\$params & 2) {
+		deploy('b/.htaccess', '.htaccess');
+	} elseif(\$params & 1) {
+		deploy('a/.htaccess', '.htaccess');
 	}
 
-	function clean(\$dir) {
-		\@unlink(\$dir.'/.htaccess');
-		\@unlink(\$dir.'/index.php');
-		\@rmdir(\$dir);
-	}
+	deploy('index.php');
+	deploy('rsslib.php');
+	deploy('feeds.php');
 
-	clean('a');
-	clean('b');
+	header('Location: admin');
+	\@unlink(__FILE__);
 }
+
 ?>
-FOOTER
+BODY
 ;
 
 close INST;

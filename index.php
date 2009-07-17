@@ -1,31 +1,41 @@
 <?php
 
-$CONFIG = array(
-	'logo'		=> '@IMG@',
-	'IDML'		=> '@IDML@',
-	'URL'		=> '@URL@',
-	'URI'		=> '@URI@',
-	'pvt'		=> '@PVT@',
-);
-
-define('VERSAO',	'4.5');
-define('CLIQUE',	'http://clique.secundum.com.br/');
+define('VERSAO',	'5.0');
 define('API',		'sistema.php');
+define('CLIQUE',	'http://clique.secundum.com.br');
 
-define('BUSCA',		'busca');
+define('ADMIN',		'admin');
+define('CPDEFS',	'cpdefs.ini');
+
 define('CACHE',		'cache');
 define('CACHE_AUTO',CACHE . DIRECTORY_SEPARATOR . 'auto');
-define('CACHE_EXP',	3600*24*5);
 define('CACHE_LOCK',CACHE . DIRECTORY_SEPARATOR . 'lock');
 define('CLEANUP',	'cleanup');
-define('LAYOUT',	'layout');
-define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'template.html');
 
-$SUFFIX = array('ven','vis','car','bar','mel');
+define('LAYOUT',	'layout');
+define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'alldefs.ini');
 
 error_reporting(0);
+
 $ips = gethostbynamel('secundum.com.br');
-define('SERVIDOR', sprintf('http://%s/sis4/', $ips[rand(0, count($ips) - 1)]));
+define('SERVIDOR', sprintf('http://%s/sis5/', $ips[rand(0, count($ips) - 1)]));
+
+$base = dirname(empty($_SERVER['PHP_SELF']) ? $_SERVER['SCRIPT_NAME'] : $_SERVER['PHP_SELF']);
+$base = str_replace(DIRECTORY_SEPARATOR, '/', $base);
+$base = trim($base, '/');
+$dir = dirname($out);
+$dir = trim($dir, DIRECTORY_SEPARATOR);
+$dir = ltrim($dir, '.');
+$dir = empty($base) ? "/$dir" : "/$base/$dir";
+if (substr($dir, -1, 1) != '/') {
+	$dir .= '/';
+}
+$CFG = array();
+$CFG['LOJA_URI'] = $dir;
+
+$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
+$CFG = array_merge($CFG, parse_ini('mydefs.ini'));
+$CFG = array_merge($CFG, parse_ini(CPDEFS));
 
 if (!function_exists('file_put_contents')) {
 	function file_put_contents($filename, $data) {
@@ -46,8 +56,8 @@ if (!function_exists('gzdecode')) {
 			return null;	// Not GZIP format (See RFC 1952)
 		}
 
-		$g = tempnam(sys_get_temp_dir(), 'ff');
-		@file_put_contents($g,$data);
+		$g = tempnam(sys_get_temp_dir(), 'secundum_superloja' . VERSAO);
+		@file_put_contents($g, $data);
 		ob_start();
 		readgzfile($g);
 		@unlink($g);
@@ -58,8 +68,8 @@ if (!function_exists('gzdecode')) {
 if (!function_exists('sys_get_temp_dir')) {
 	function sys_get_temp_dir() {
 		if (!empty($_ENV['TMP']))		{ return realpath($_ENV['TMP']); }
-		if (!empty($_ENV['TMPDIR']))	{ return realpath( $_ENV['TMPDIR']); }
-		if (!empty($_ENV['TEMP']))		{ return realpath( $_ENV['TEMP']); }
+		if (!empty($_ENV['TMPDIR']))	{ return realpath($_ENV['TMPDIR']); }
+		if (!empty($_ENV['TEMP']))		{ return realpath($_ENV['TEMP']); }
 		$tempfile = tempnam(uniqid(rand(), TRUE), '');
 		if (file_exists($tempfile)) {
 			@unlink($tempfile);
@@ -68,31 +78,20 @@ if (!function_exists('sys_get_temp_dir')) {
 	}
 }
 
-$query	= $_GET['query'];
-$uri	= $_GET['uri'];
-
-if ($query) {
-	$query = do_query($query);
-	if (empty($query)) {
-		header('Location: ' . $CONFIG['URI']);
+if ($query = $_GET['query']) {
+	if (preg_match('%busca=(.+)%', $query, $q)) {
+		header('Location: ' . $CFG['LOJA_URI'] . preg_replace('%\s+%', '-', $q[1]));
 	} else {
-		$query = str_replace(' ', '_', $query);
-		header('Location: ' . $CONFIG['URI'] . $query . '/');
+		header('Location: ' . $CFG['LOJA_URI']);
 	}
 	exit();
 }
 
-$uri = normalize($uri);
-$uri = preg_replace('%^' . preg_quote(substr($CONFIG['URI'], 1)) . '%i', '', $uri);
-$uri = preg_replace('%\?.*$%', '', $uri);
 $params = array();
-foreach (preg_split('%/%', $uri, 3, PREG_SPLIT_NO_EMPTY) as $param) {
-	preg_replace('%^\.%', '', $param);
-	array_push($params, $param);
+foreach (preg_split('%/%', normalize($_GET['uri']), -1, PREG_SPLIT_NO_EMPTY) as $param) {
+	array_push($params, preg_replace('%^\.+%', '', $param));
 }
 $localpath = implode(DIRECTORY_SEPARATOR, $params);
-
-srand(crc32(implode('|', array(dirname(__FILE__), $localpath, $CONFIG['URL']))));
 
 mkdir_chmod(LAYOUT, 0755);
 $TPLstat = @stat(TEMPLATE);
@@ -128,43 +127,149 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 		$stamp = @filemtime(CACHE_LOCK);
 		if (!$stamp || ((time() - $stamp) > 3600)) {
 			@touch(CACHE_LOCK);
-			rmdir_r(CACHE, CACHE_EXP);
+			rmdir_r(CACHE, $CFG['CACHE_DIAS'] * 3600 * 24);
 		}
 	}
-} elseif ($params[0] == $CONFIG['pvt']) {
-	if (!empty($_POST['force'])) {
-		rmdir_r(CACHE, -1);
+} elseif ($params[0] == ADMIN) {
+	if ($_POST['_pwd'] == $CFG['SENHA_ADMIN']) {
+		if ($_POST['_save']) {
+			$ch = @fopen(CPDEFS, 'w');
+			foreach ($_POST as $key => $val) {
+				if ($key[0] != '_') {
+					if (!(($_POST['_default'] == 'on') && !in_array($key, explode('|', preg_replace('%\r?\n%s', '', $CFG['CUSTOM']))))) {
+						$buf = utf8_decode($_POST[$key]);
+						$buf = preg_replace('%\\\"%', '"', $buf);
+						$buf = preg_replace("%\\\'%", "'", $buf);
+						fwrite($ch, sprintf("[%s]\r\n%s\r\n\r\n", $key, $buf));
+						$CFG[$key] = $buf;
+					} else {
+						unset($CFG[$key]);
+					}
+				}
+			}
+			fclose($ch);
+		}
 
-		header('Location: ' . $CONFIG['pvt']);
+		if ($_POST['_cache_reset'] == 'on') {
+			rmdir_r(CACHE, -1);
+		}
+
+		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 3.2//EN\">
+<html>
+<head>
+<title>Controle da loja</title>
+<script type=\"text/javascript\">
+function fnum(x) {
+	return x.replace(/\D/g, '');
+}
+function furl(x) {
+	if (x.search(/^http:\/\//) == -1) {
+		x = 'http://' + x;
+	}
+	x = x.replace(/\/+$/, '');
+	x = x.replace(/\s/g, '');
+	return x;
+}
+</script>
+</head>
+<body onload=\"if(!document.cpanel.main.value)document.cpanel.main.value=location.href.substr(0,location.href.length-6);\">
+<h1>Controle da loja</h1>
+<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\">
+<input type=\"hidden\" value=\"1\" name=\"_save\">
+<input type=\"hidden\" value=\"$CFG[SENHA_ADMIN]\" name=\"_pwd\">
+<table border=\"0\" summary=\"\">
+";
+			
+		update_template();
+
+		foreach ($CFG as $key => $title) {
+			if (substr($key, 0, 3) == 'CP_') {
+				if ($end = strpos($key, '.')) {
+					$type = substr($key, $end + 1);
+					$key = substr($key, 3, $end - 3);
+				} else {
+					$type = 's';
+					$key = substr($key, 3);
+				}
+
+				$len = substr($type, 1);
+				if (!$len) {
+					$len = 50;
+				}
+
+				switch ($type[0]) {
+					case 'n':
+						$filter = 'onkeyup="this.value=fnum(this.value);"';
+						$len = 12;
+						break;
+					case 'u':
+						$filter = 'onkeyup="this.value=furl(this.value);"';
+						break;
+					case 'U':
+						if (empty($CFG['LOJA_URL']) && $_SERVER['SERVER_NAME'] && $_SERVER['PHP_SELF']) {
+							$CFG['LOJA_URL'] = sprintf('http://%s%s', $_SERVER['SERVER_NAME'], str_replace(DIRECTORY_SEPARATOR, '/', dirname($_SERVER['PHP_SELF'])));
+						}
+						$CFG['LOJA_URL'] = rtrim($CFG['LOJA_URL'], '/');
+						$filter = 'onkeyup="this.value=furl(this.value);" name="main" id="main"';
+						break;
+					default:
+						$filter = '';
+				}
+
+				$val = htmlentities($CFG[$key]);
+
+				echo "<tr>
+	<td align=\"right\" valign=\"top\"><b>$title</b></td>
+	<td>
+";
+				if ($type[0] == 'a') {
+					echo "<textarea name=\"$key\" cols=\"80\" rows=\"20\">$val</textarea>\n";
+				} else {
+					echo "<input type=\"text\" name=\"$key\" value=\"$val\" size=\"60\" maxlength=\"$len\" $filter>\n";
+				}
+				echo "</td></tr>\n";
+			}
+		}
+
+		echo "
+<tr>
+	<td align=\"right\"><b>Limpar cache:</b></td>
+	<td><input type=\"checkbox\" name=\"_cache_reset\"></td>
+</tr>
+<tr>
+	<td align=\"right\"><b>Restaurar configura&ccedil;&otilde;es originais:</b></td>
+	<td><input type=\"checkbox\" name=\"_default\"></td>
+</tr>
+<tr>
+	<td colspan=\"2\" align=\"center\"><input type=\"submit\" value=\"Salvar\"></td>
+</tr>
+</table>
+</form>
+<a href=\"$CFG[LOJA_URL]\">Ir para a loja V" . VERSAO . "</a>
+$CFG[SECUNDUM_CPANEL]
+</body></html>
+";
 	} else {
-		$VERSAO	= VERSAO;
-		$LOJA	= $CONFIG['URI'];
-		echo <<<HTML
-<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2//EN">
+		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 3.2//EN\">
 <html>
 <head>
 <title>Controle da loja</title>
 </head>
 <body>
-<h2>Grave este endere&ccedil;o para poder realizar a manuten&ccedil;&atilde;o da sua loja!</h2>
-<p><a href="$LOJA">Ir para a loja V<!-- VER -->$VERSAO<!-- VER --></a></p>
-Estat&iacute;sticas do servidor central:
-<pre>
-HTML;
-
-		fetch(SERVIDOR . API . '?p1=' . $CONFIG['URL'], 1);
-
-		echo <<<FORM
-</pre>
-<form method='post'><input type="hidden" name="force" value="y">
-<input type="submit" value="Limpar cache"></form>
-</body></html>
-FORM;
+<center>
+<h1>Controle da loja</h1>
+<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\">
+Senha: <input type=\"password\" name=\"_pwd\">
+<input type=\"submit\" value=\"Entrar\">
+</form>
+</center>
+</body>
+</html>
+";
 	}
-} elseif (in_array($params[0], array('busca', 'cache'))) {
-	array_shift($params);
-	header('Location: ' . implode('/', $params));
-} elseif (!empty($localpath) && file_exists($localpath)) {
+} elseif ($params[0] == 'clique') {
+	header(sprintf('Location: %s/%s', CLIQUE, implode('/', array_slice($params, 1))));
+} elseif (!empty($localpath) && file_exists($localpath) && (substr($localpath, -4) != '.ini')) {
 	$data = @file_get_contents($localpath);
 	fix_header($localpath);
 	echo $data;
@@ -176,62 +281,36 @@ FORM;
 	@ob_start('ob_gzhandler');
 
 	$busca = $params[0];
-	$filtro = $params[1];
-
-	if (empty($filtro) || !in_array($filtro, $SUFFIX)) {
-		$filtro = 'vis';
+	if (empty($busca) && $CFG['DEFAULT_SEARCH']) {
+		$busca = preg_replace('%\s+%s', '-', strtolower($CFG['DEFAULT_SEARCH']));
 	}
 
 	if (!empty($busca)) {
 		$cached_file = cached();
 		if (file_exists($cached_file)) {
-			$xml = @file_get_contents($cached_file);
+			$page = @file_get_contents($cached_file);
 
-			$tmp = gzdecode($xml);
+			$tmp = gzdecode($page);
 			if (!$tmp) {
-				$tmp = $xml;
+				$tmp = $page;
 			}
 		}
 	}
 
-	if (empty($xml)) {
-		$xml = fetch(sprintf('%s%s?p1=%s&p2=%s&p3=%s', SERVIDOR, API, $CONFIG['URL'], $busca, $filtro));
+	if (empty($page)) {
+		$page = fetch(sprintf('%s%s?p1=%s&p2=%s', SERVIDOR, API, $CFG['LOJA_URL'], $busca));
 
-		$tmp = gzdecode($xml);
+		$tmp = gzdecode($page);
 		if (!$tmp) {
-			$tmp = $xml;
+			$tmp = $page;
 		}
 
-		if (!$tmp || (substr($tmp, 0, 5) != '<?xml')) {
-			echo($xml);
+		if (!$tmp || (substr($tmp, 0, 4) != 'SEC5')) {
+			echo($page);
 			exit();
 		} else {
-			$botlist = array(
-				'3D_SEARCH','AbachoBOT','accoona','AcoiRobot','afinar','AideRSS','AISearchBot',
-				'alexa','AltaVista','ANTFresco','appie','Ask Jeeves','ASPSeek','asterias',
-				'Avant','BabalooSpider','BaiduImagespider','Baiduspider','BDFetch',
-				'BlogPulseLive','BobCrawl','Caliperbot','CazoodleBot','CCBot','CFNetwork',
-				'Cooliris','CoverScout','crawler','CrocCrawler','CyberPatrol','DoCoMo',
-				'Dumbot','envolk','eStyle','facebookexternalhit','FAST-WebCrawler','FDM',
-				'feedzero.com','fetch','Firefly','freshmeat.net','froogle','FyberSpider',
-				'Gaisbot','GbPlugin','GeonaBot','Gigabot','girafabot','Google','GrubNG',
-				'GurujiBot','holmes','ia_archiver','IDBot','InfoSeek','inktomi','Jakarta',
-				'Java','kalooga','Knight','KumKie','librabot','libwww-perl','looksmart',
-				'Lycos','Mail.Ru','Melomania','MLBot','Moreoverbot','MSFrontPage','msnbot',
-				'MSR-ISRCCrawler','MSRBOT','NationalDirectory','NSPlayer','NV32ts','Ocelli',
-				'OOZBOT','Page2RSS','PHP','phpbbcom','Plonebot','psbot','PuxaRapido','PycURL',
-				'Pylciet','Python-urllib','rabaz','radian','Rambler','Rankivabot',
-				'REAP-crawler','SapphireWebCrawler','Scooter','Scrubby','SeznamScreenshotator',
-				'SiteBar','Sleipnir','Slurp','Sogou','Spade','StackRambler','SurveyBot',
-				'SZN-Image-Resizer','TailsweepBot','TechnoratiSnoop','TECNOSEEK','Teoma',
-				'thumbshots-de-bot','URL_Spider_SQL','VLC','voyager','WebAlta','WebBug',
-				'webcollage','WebFindBot','WebReaper','Wget','WHttpTest','wikiwix','WordPress',
-				'galaxy','wwwster','xqrobot','Yahoo','Yandex','Yanga','YebolBot','Yeti',
-				'Z-Add','ZyBorg'
-			);
-
 			$is_bot = false;
-			foreach ($botlist as $bot) {
+			foreach (explode('|', preg_replace('%\r?\n%s', '', $CFG['BOT_USER_AGENT'])) as $bot) {
 				if (preg_match('%' . preg_quote($bot) . '%i', $_SERVER['HTTP_USER_AGENT'])) {
 					$is_bot = true;
 					break;
@@ -241,140 +320,93 @@ FORM;
 			if (!empty($cached_file) && !$is_bot) {
 				mkdir_recursive(dirname($cached_file), 0777);
 
-				@file_put_contents($cached_file, $xml);
+				@file_put_contents($cached_file, $page);
 				@chmod($cached_file, 0644);
 			}
 		}
 	}
 
-	$page = xml2array($tmp);
-	$page = $page['page'];
-
-	if (($TPLstat !== false) && $TPLstat['size'] && ($TPLstat['mtime'] >= strtotime($page['modif']))) {
-		$TPL = @file_get_contents(TEMPLATE);
-	} else {
-		$TPL = fetch(SERVIDOR . TEMPLATE);
-		if (!empty($TPL)) {
-			@file_put_contents(TEMPLATE, $TPL);
-			@chmod(TEMPLATE, 0644);
-			@touch(CACHE_AUTO);
-		}
+	preg_match('%^SEC5\s+(.+?)\r?\n%s', $tmp, $m);
+	if (($TPLstat === false) || !$TPLstat['size'] || ($TPLstat['mtime'] < strtotime($m[1]))) {
+		update_template();
 	}
+	$page = preg_replace('%^.*?(\r?\n)+%', '', $tmp);
 
-	preg_match('%@ITEM_BEGIN@(.+?)@ITEM_END@%s', $TPL, $tmp);
-	$itemTPL = $tmp[0];
-	$itemTPL = preg_replace('%^@ITEM_BEGIN@%s', '', $itemTPL);
-	$itemTPL = preg_replace('%@ITEM_END@$%s', '', $itemTPL);
-	$TPL = preg_replace('%@ITEM_BEGIN@.+?@ITEM_END@%s', '', $TPL);
-
-	$TPL = preg_replace('%@DESCR@%',	$page['descr'], $TPL);
-	$TPL = preg_replace('%@TITLE@%',	substr($page['descr'], 0, 60), $TPL);
-
-	$chave = do_query(parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY));
-	$TPL = preg_replace('%@SEARCH@%',	"value='" . ($chave ? $chave : 'Escreva aqui sua busca, n&atilde;o use plural\' onfocus=\'this.value=""') . "'", $TPL);
-
-	$logo = sprintf('src="%s" width="%d" height="%d" alt="%s"', $CONFIG['logo'], 780, 120, '');
-	$TPL = preg_replace('%@LOGO@%',		$logo, $TPL);
-
-	if (empty($busca)) {
-		$busca	= $page['search'];
-		$robots	= 'NOINDEX,FOLLOW';
-	} else {
-		$robots = 'INDEX,FOLLOW';
-	}
-	$descr		= $page['descr'];
-
-	$TPL = preg_replace('%@RELATED_LINK@%', CLIQUE . $CONFIG['IDML'] . '/' . str_replace(' ', '_', $busca), $TPL);
-
-	$footer		= "<p>\n";
-	$tmp = $page['footer']['intern']['link'];
-	if (is_string($tmp)) { $tmp = array($tmp); }
-	$footer		.= implode('', array_map('externlink', $tmp));
-	$footer		.= "\n</p>\n";
-	$footer		.= "<p>\n";
-	$tmp = $page['footer']['extern']['link'];
-	if (is_string($tmp)) { $tmp = array($tmp); }
-	$footer		.= implode('', array_map('externlink', $tmp));
-	$footer		.= "</p>\n";
-	$TPL = preg_replace('%@FOOTER@%',	$footer, $TPL);
-
-	$cols = preg_match_all('%@ITEM_COL@%', $TPL, $tmp);
-
-	$keywords = array();
-	$items = $page['items']['item'];
-	if (!empty($items['link'])) { $items = array($items); }
-
-	if (count($items)) {
-		$COL = array();
-		for ($i = 0; $i < $cols; $i++) {
-			$COL[$i] = array();
-		}
-		for ($i = 0; $i < count($items); $i++) {
-			array_push($COL[$i % $cols], $items[$i]);
-		}
-		$i = 0;
-		foreach ($COL as $column) {
-			$tmp = '';
-			foreach ($column as $item) {
-				permuta($keywords, implode(' ', array($item['title'],$item['descr'],$item['imgtitle'],$item['similar'])));
-
-				$item_descr = $item['descr'];
-				/*
-				if ($i < 3) {
-					$item_descr = '<h1>' . $item['descr'] . '</h1>';
-				} elseif ($i < 8) {
-					$item_descr = '<h2>' . $item['descr'] . '</h2>';
-				}
-				*/
-				++$i;
-
-				$itemHTML = $itemTPL;
-				$itemHTML = preg_replace('%@ITEM_TITLE@%',	$item['title'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_DESCR@%',	$item_descr, $itemHTML);
-
-				$img = preg_split('%/%', $item['img'], 2, PREG_SPLIT_NO_EMPTY);
-				$itemHTML = preg_replace('%@ITEM_IMG@%',	sprintf('http://%s.mlapps.com/jm/img?s=MLB&f=%s.jpg&v=I', $img[0], $img[1]), $itemHTML);
-
-				$itemHTML = preg_replace('%@ITEM_ALT@%',	$item['imgtitle'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_LINK@%',	CLIQUE . $CONFIG['IDML'] . '/' . $item['link'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_PRICE@%',	$item['price'], $itemHTML);
-				$itemHTML = preg_replace('%@ITEM_SIMILAR@%',CLIQUE . $CONFIG['IDML'] . '/' . $item['similar'], $itemHTML);
-
-				$tmp .= $itemHTML;
+	foreach ($CFG as $key => $val) {
+		$buf = '';
+		foreach (preg_split('%\r?\n%s', $val, -1, PREG_SPLIT_NO_EMPTY) as $line) {
+			if (preg_match('%^\@include\s+([\w\.\-]+)%i', $line, $inc)) {
+				$buf .= get_include_contents($inc[1]);
+			} else {
+				$buf .= $line;
 			}
-			$TPL = preg_replace('%@ITEM_COL@%',	$tmp, $TPL, 1);
+			$buf .= "\n";
 		}
-
-		arsort($keywords, SORT_NUMERIC);
-		$keywords = array_keys($keywords);
-		array_splice($keywords, 9);
-		array_push($keywords, 'comprar');
-		$TPL = preg_replace('%@KEYWORDS@%',	implode(', ', $keywords), $TPL);
-	} else {
-		@unlink($cached_file);
-		$TPL = preg_replace('%@ITEM_COL@%',	'Nenhum produto encontrado', $TPL, 1);
-		$TPL = preg_replace('%@ITEM_COL@%',	'', $TPL);
-		$robots = 'NOINDEX,FOLLOW';
+		$page = str_replace("%${key}%", $buf, $page);
 	}
+	$page = preg_replace('%="(.+?)"%eis', '"=\"" . condense("\1") . "\""', $page);
 
-	
-	$TPL = preg_replace('%@SEARCH_TEXT@%', $busca, $TPL);
-
-	/*
-	$TPL = preg_replace('%<p\s+class="item_texto">(.+?)</p>%s', '<h1>$1</h1>', $TPL, 3);
-	$TPL = preg_replace('%<p\s+class="item_texto">(.+?)</p>%s', '<h2>$1</h2>', $TPL, 5);
-	*/
-
-	$TPL = preg_replace('%@ROBOTS@%',	$robots, $TPL);
-
-	$TPL = preg_replace('%@IDML@%',		$CONFIG['IDML'], $TPL);
-	$TPL = preg_replace('%@LOJA@%',		$CONFIG['URL'], $TPL);
-
-	echo $TPL;
+	echo $page;
 }
 
 exit();
 
+
+function update_template($modif) {
+	global $CFG;
+	$TPL = fetch(SERVIDOR . TEMPLATE);
+	if (!empty($TPL)) {
+		@file_put_contents(TEMPLATE, $TPL);
+		@chmod(TEMPLATE, 0644);
+		@touch(CACHE_AUTO);
+
+		$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
+	}
+}
+
+function condense($str) {
+	return preg_replace('%\r?\n%', '', $str);
+}
+
+function normalize($str, $human = false) {
+	$str = urldecode($str);
+	$str = utf8_decode($str);
+	$str = html_entity_decode($str);
+	$str = strtolower($str);
+
+	$str = strtr($str, "¬∫¬™`¬¥√á√ß√ë√±√É√ï√£√µ√Ç√ä√é√î√õ√¢√™√Æ√¥√ª√Ä√à√å√í√ô√†√®√¨√≤√π√Å√â√ç√ì√ö√°√©√≠√≥√∫√Ñ√ã√è√ñ√ú√§√´√Ø√∂√º", "oa''ccnnaoaoaeiouaeiouaeiouaeiouaeiouaeiouaeiouaeiou");
+
+	if ($human) {
+		$str = preg_replace('%\W+%', ' ', $str);
+	}
+
+	return $str;
+}
+
+function parse_ini($file, $trim = true) {
+	$array = array();
+	if ($dh = @fopen($file, 'r')) {
+		while (!feof($dh)) {
+			$line = fgets($dh, 4096);
+
+			if (preg_match('%^\[([\w\.]+)\]\s+$%', $line, $match)) {
+				if (!empty($key) && $trim) {
+					$array[$key] = trim($array[$key]);
+				}
+
+				$key = $match[1];
+				$array[$key] = '';
+			} elseif (!preg_match('%^\s+$%', $line)) {
+				$array[$key] .= $line;
+			}
+		}
+		if (!empty($key) && $trim) {
+			$array[$key] = trim($array[$key]);
+		}
+		fclose($dh);
+	}
+	return $array;
+}
 
 function rmdir_r($directory, $age) {
 	if (function_exists('set_time_limit')) {
@@ -424,11 +456,10 @@ function mkdir_recursive($pathname, $mode) {
 }
 
 function cached() {
-	global $busca, $filtro;
+	global $busca;
 
 	$cached = array();
 	array_push($cached, CACHE);
-	array_push($cached, $filtro);
 	for ($i = 1; $i <= 3; $i++) {
 		$tree = substr($busca, 0, $i);
 		array_push($cached, $tree);
@@ -437,19 +468,15 @@ function cached() {
 	return implode(DIRECTORY_SEPARATOR, $cached);
 }
 
-function normalize($str, $human = false) {
-	$str = urldecode($str);
-	$str = utf8_decode($str);
-	$str = html_entity_decode($str);
-	$str = strtolower($str);
-
-	$str = strtr($str, "∫™`¥«Á—Ò√’„ı¬ Œ‘€‚ÍÓÙ˚¿»Ã“Ÿ‡ËÏÚ˘¡…Õ”⁄·ÈÌÛ˙ƒÀœ÷‹‰ÎÔˆ¸", "oa''ccnnaoaoaeiouaeiouaeiouaeiouaeiouaeiouaeiouaeiou");
-
-	if ($human) {
-		$str = preg_replace('%\W+%', ' ', $str);
-	}
-
-	return $str;
+function fetch($url) {
+	$url = str_replace(DIRECTORY_SEPARATOR, '/', $url);
+	$ch = curl_init();
+	curl_setopt($ch, CURLOPT_URL, $url);
+	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
+	$buf = curl_exec($ch);
+	curl_close($ch);
+	return $buf;
 }
 
 function fix_header($filename) {
@@ -467,200 +494,15 @@ function fix_header($filename) {
 	}
 }
 
-function fetch($url, $verbose) {
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, str_replace(DIRECTORY_SEPARATOR, '/', $url));
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-	$buf = curl_exec($ch);
-	if ($verbose) {
-		echo "[$url]\n";
-		if ($buf === false) {
-			echo "ERRO: " . curl_error($ch) . "\n";
-		} else {
-			$info = curl_getinfo($ch);
-			echo $info['total_time']." segundos para completar\n";
-		}
-		echo "\n";
+function get_include_contents($filename) {
+	if (is_file($filename)) {
+		ob_start();
+		include $filename;
+		$contents = ob_get_contents();
+		ob_end_clean();
+		return $contents;
 	}
-	curl_close($ch);
-
-	return $buf;
-}
-
-function externlink($link) {
-	global $page, $SUFFIX, $CONFIG;
-
-	$word = preg_replace('%^.*/%', '', rtrim($link, '/'));
-	$word = str_replace('_', ' ', $word);
-
-	if (!preg_match('%^http://%i', $link)) {
-		$link = $CONFIG['URL'] . '/' . $link;
-	}
-
-	$any = rand(0, count($SUFFIX));
-	$sfx = $SUFFIX[$any];
-
-	return "<a href=\"$link/$sfx\">$word</a>\n";
-}
-
-function permuta(&$keywords, $input) {
-	$window = array();
-	foreach (preg_split('%\W+%', $input, -1, PREG_SPLIT_NO_EMPTY) as $word) {
-		if (strlen($word) >= 3) {
-			array_push($window, $word);
-			if (count($window) > 3) {
-				array_shift($window);
-			}
-			for ($i = 1; $i <= count($window); $i++) {
-				$tmp = $window;
-				array_splice($tmp, $i);
-				++$keywords[implode(' ', $tmp)];
-			}
-		}
-	}
-}
-
-function do_query($query) {
-	$chave = array();
-	foreach (explode('&', $query) as $pair) {
-		$x = explode('=', $pair);
-		if (in_array($x[0],
-			array(
-				'q','query','qry','keyword','search','keywords','key','s','Keywords',
-				'qkw','word','qt','k','kw','words','searchfor','w','qs','ask','Terms',
-				'srchText','qq','term','terms','KERESES','qr','string','qry_str','busca',
-				'KEYWORDS','str','begriff','text','keys','mt','p','querytext','MT','Q',
-				'su','search_query','qu','QueryString'
-			))) {
-			array_push($chave, normalize($x[1], true));
-		}
-	}
-	return implode(' ', $chave);
-}
-
-function xml2array($contents, $get_attributes=1, $priority = 'tag')	{
-	if(!$contents) return array();
-
-	if(!function_exists('xml_parser_create')) {
-		//print	"'xml_parser_create()' function	not	found!";
-		return array();
-	}
-
-	//Get the XML parser of	PHP	- PHP must have	this module	for	the	parser to work
-	$parser	= xml_parser_create('');
-	xml_parser_set_option($parser, XML_OPTION_TARGET_ENCODING, "UTF-8"); # http://minutillo.com/steve/weblog/2004/6/17/php-xml-and-character-encodings-a-tale-of-sadness-rage-and-data-loss
-	xml_parser_set_option($parser, XML_OPTION_CASE_FOLDING,	0);
-	xml_parser_set_option($parser, XML_OPTION_SKIP_WHITE, 1);
-	xml_parse_into_struct($parser, trim($contents),	$xml_values);
-	xml_parser_free($parser);
-
-	if(!$xml_values) return;//Hmm...
-
-	//Initializations
-	$xml_array = array();
-	$parents = array();
-	$opened_tags = array();
-	$arr = array();
-
-	$current = &$xml_array;	//Refference
-
-	//Go through the tags.
-	$repeated_tag_index	= array();//Multiple tags with same	name will be turned	into an	array
-	foreach($xml_values	as $data) {
-		unset($attributes,$value);//Remove existing	values,	or there will be trouble
-
-		//This command will	extract	these variables	into the foreach scope
-		// tag(string),	type(string), level(int), attributes(array).
-		extract($data);//We	could use the array	by itself, but this	cooler.
-
-		$result	= array();
-		$attributes_data = array();
-
-		if(isset($value)) {
-			if($priority ==	'tag') $result = $value;
-			else $result['value'] =	$value;	//Put the value	in a assoc array if	we are in the 'Attribute' mode
-		}
-
-		//Set the attributes too.
-		if(isset($attributes) and $get_attributes) {
-			foreach($attributes	as $attr =>	$val) {
-				if($priority ==	'tag') $attributes_data[$attr] = $val;
-				else $result['attr'][$attr]	= $val;	//Set all the attributes in	a array	called 'attr'
-			}
-		}
-
-		//See tag status and do	the	needed.
-		if($type ==	"open")	{//The starting	of the tag '<tag>'
-			$parent[$level-1] =	&$current;
-			if(!is_array($current) or (!in_array($tag, array_keys($current)))) { //Insert New tag
-				$current[$tag] = $result;
-				if($attributes_data) $current[$tag.	'_attr'] = $attributes_data;
-				$repeated_tag_index[$tag.'_'.$level] = 1;
-
-				$current = &$current[$tag];
-
-			} else { //There was another element with the same tag name
-
-				if(isset($current[$tag][0])) {//If there is	a 0th element it is	already	an array
-					$current[$tag][$repeated_tag_index[$tag.'_'.$level]] = $result;
-					$repeated_tag_index[$tag.'_'.$level]++;
-				} else {//This section will	make the value an array	if multiple	tags with the same name	appear together
-					$current[$tag] = array($current[$tag],$result);//This will combine the existing	item and the new item together to make an array
-					$repeated_tag_index[$tag.'_'.$level] = 2;
-
-					if(isset($current[$tag.'_attr'])) {	//The attribute	of the last(0th) tag must be moved as well
-						$current[$tag]['0_attr'] = $current[$tag.'_attr'];
-						unset($current[$tag.'_attr']);
-					}
-
-				}
-				$last_item_index = $repeated_tag_index[$tag.'_'.$level]-1;
-				$current = &$current[$tag][$last_item_index];
-			}
-
-		} elseif($type == "complete") {	//Tags that	ends in	1 line '<tag />'
-			//See if the key is	already	taken.
-			if(!isset($current[$tag])) { //New Key
-				$current[$tag] = $result;
-				$repeated_tag_index[$tag.'_'.$level] = 1;
-				if($priority ==	'tag' and $attributes_data)	$current[$tag. '_attr']	= $attributes_data;
-
-			} else { //If taken, put all things	inside a list(array)
-				if(isset($current[$tag][0])	and	is_array($current[$tag])) {//If	it is already an array...
-
-					// ...push the new element into	that array.
-					$current[$tag][$repeated_tag_index[$tag.'_'.$level]] = $result;
-
-					if($priority ==	'tag' and $get_attributes and $attributes_data)	{
-						$current[$tag][$repeated_tag_index[$tag.'_'.$level]	. '_attr'] = $attributes_data;
-					}
-					$repeated_tag_index[$tag.'_'.$level]++;
-
-				} else { //If it is	not	an array...
-					$current[$tag] = array($current[$tag],$result);	//...Make it an	array using	using the existing value and the new value
-					$repeated_tag_index[$tag.'_'.$level] = 1;
-					if($priority ==	'tag' and $get_attributes) {
-						if(isset($current[$tag.'_attr'])) {	//The attribute	of the last(0th) tag must be moved as well
-
-							$current[$tag]['0_attr'] = $current[$tag.'_attr'];
-							unset($current[$tag.'_attr']);
-						}
-
-						if($attributes_data) {
-							$current[$tag][$repeated_tag_index[$tag.'_'.$level]	. '_attr'] = $attributes_data;
-						}
-					}
-					$repeated_tag_index[$tag.'_'.$level]++;	//0	and	1 index	is already taken
-				}
-			}
-
-		} elseif($type == 'close') { //End of tag '</tag>'
-			$current = &$parent[$level-1];
-		}
-	}
-
-	return($xml_array);
+	return false;
 }
 
 ?>
