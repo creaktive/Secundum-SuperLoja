@@ -28,10 +28,11 @@ delete $f{$_} foreach qw(
 	if elseif switch
 	and not or
 	do for foreach return while
-	array empty isset unset
+	array empty isset list unset
 	echo exit
 	set_time_limit
-	busca location.href.substr x.replace
+	readgzfile
+	busca location.href.substr x.replace acessos cliques swfobject.embedswf
 );
 my $check = "array('" . join ("','", sort keys %f) . "')";
 
@@ -55,9 +56,15 @@ undeploy ('b/.htaccess');
 undeploy ('index.php');
 undeploy ('rsslib.php');
 undeploy ('feeds.php');
+undeploy ('chart.php');
+undeploy ('robots.txt');
 
 for (1..10) {
 	undeploy (sprintf ('imagens/%03d.jpg', $_));
+}
+
+foreach (qw(expressInstall.swf swfobject.js open-flash-chart.swf niceforms.css niceforms.js 0.png button.png button-left.png button-right.png checkbox.png file.png input.png input-left.png input-right.png radio.png select-left.png select-right.png textarea-bl.png textarea-br.png textarea-l-off.png textarea-l-over.png textarea-r-off.png textarea-r-over.png textarea-tl.png textarea-tr.png)) {
+	undeploy ("controle/$_");
 }
 
 ############ PHP CODE ############
@@ -87,6 +94,7 @@ function deploy(\$file, \$out, \$gz){
 
 		\$buf = preg_replace('%\@URI\@%s', \$uri, \$buf);
 		\$buf = preg_replace('%\@URL\@%s', \$url, \$buf);
+		\$buf = preg_replace('%sistema\.secundum\.com\.br%s', \$_POST['sis'], \$buf);
 
 		if (\$fh = fopen(\$out, 'wb')) {
 			if (!fwrite(\$fh, empty(\$gz) ? \$buf : gzencode(\$buf))) {
@@ -111,14 +119,22 @@ function mkdir_chmod(\$pathname, \$mode) {
 	\@chmod(\$pathname, \$mode);
 }
 
-function fetch(\$addr) {
-	\$ch = curl_init();
-	curl_setopt(\$ch, CURLOPT_URL, \$addr);
-	curl_setopt(\$ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt(\$ch, CURLOPT_CONNECTTIMEOUT, 15);
-	\$buf = curl_exec(\$ch);
-	curl_close(\$ch);
-	return \$buf;
+function fetch(\$uri) {
+	\$req = "GET \$uri HTTP/1.0\\r\\n";
+	\$req .= 'Host: ' . \$_SERVER['SERVER_NAME'] . "\\r\\n";
+	\$req .= "\\r\\n";
+	\$res = '';
+
+	if (false != (\$fs = \@fsockopen(\$_SERVER['SERVER_ADDR'], \$_SERVER['SERVER_PORT'], \$errno, \$errstr, 15))) {
+		fwrite(\$fs, \$req);
+		while (!feof(\$fs) && (strlen(\$res) < 0x2800))
+			\$res .= fgets(\$fs, 1160);
+		fclose(\$fs);
+
+		list(\$tmp, \$res) = preg_split('%\\r?\\n\\r?\\n%', \$res, 2);
+	}
+
+	return \$res;
 }
 
 \$params = \$_POST['params'];
@@ -128,8 +144,10 @@ if (!\$params) {
 <html><head>
 <title>Instala&ccedil;&atilde;o da SuperLoja Secundum</title>
 </head>
-<body>
-<h1>Instala&ccedil;&atilde;o da SuperLoja Secundum</h1>
+<body style="background-color:#cccccc;font-family: Trebuchet MS; font-size: 11px; color:#333333; padding:20px;">
+<table align="center" summary="" style="background-color:#f2f2e6; border:1px solid #ffffff; border-color:#ffffff #666661 #666661 #ffffff; text-align:center; padding:10px 10px 0px 10px;">
+<tr><th>Instala&ccedil;&atilde;o da SuperLoja Secundum</th></tr>
+<tr><td><br>
 HEAD;
 
 	if (is_writable(dirname(__FILE__))) {
@@ -141,10 +159,10 @@ HEAD;
 		deploy('b/.htaccess');
 		deploy('a/index.php', 'b/index.php');
 
-		if (substr(fetch(\$url . '/a/teste/teste?1'), 0, 4) == 'SEC5') {
+		if (substr(fetch(\$base . '/a/teste/teste?1'), 0, 4) == 'SEC5') {
 			\$params |= 1;
 		}
-		if (substr(fetch(\$url . '/b/teste/teste?2'), 0, 4) == 'SEC5') {
+		if (substr(fetch(\$base . '/b/teste/teste?2'), 0, 4) == 'SEC5') {
 			\$params |= 2;
 		}
 
@@ -172,6 +190,10 @@ HEAD;
 			echo <<<FORM
 <form action="" method="post" name="instalar">
 <input type="hidden" value="\$params" name="params">
+<select name="sis">
+<option value="sistema.secundum.com.br">Loja BR</option>
+<option value="sislatina.secundum.com.br">Tienda Libre</option>
+</select>
 <input type="submit" value="Instalar!">
 </form>
 FORM;
@@ -183,7 +205,7 @@ FORM;
 		echo "<font color='#a00000'>Aten&ccedil;&atilde;o: a pasta <b>\$base</b> deve ter permiss&atilde;o 0777 ('rwxrwxrwx') <u>durante a instala&ccedil;&atilde;o</u>!</font>";
 	}
 
-	echo "</body></html>";
+	echo "</td></tr></table></body></html>";
 } else {
 	\@rename('index.php','index.php.BACKUP');
 	\@rename('.htaccess','.htaccess.BACKUP');
@@ -201,10 +223,16 @@ FORM;
 	deploy('index.php');
 	deploy('rsslib.php');
 	deploy('feeds.php');
+	deploy('chart.php');
+	deploy('robots.txt');
 
 	mkdir_chmod('imagens', 0755);
-	for (\$i = 1; \$i <= 10; \$i++) {
-		deploy(sprintf('imagens/%03d.jpg', \$i));
+	mkdir_chmod('controle', 0755);
+	foreach (array_keys(\$pkg) as \$file) {
+		\$dir = substr(\$file, 0, 8);
+		if ((\$dir == 'controle') || (\$dir == 'imagens/')) {
+			deploy(\$file);
+		}
 	}
 
 	header('Location: admin');
@@ -223,6 +251,7 @@ sub undeploy {
 
 	local $/ = undef;
 	open (FH, $file) or die "erro abrindo $file: $!\n";
+	binmode FH;
 	my $buf = <FH>;
 	my $md5 = md5_hex ($buf);
 	$buf = encode_base64 (compress ($buf), '');

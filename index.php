@@ -2,11 +2,13 @@
 
 error_reporting(0);
 
-define('VERSAO',	'5.1');
-define('CLIQUE',	'http://clique.secundum.com.br');
+define('VERSAO',	'5.3');
+define('CLIQUE',	'http://clique.secundum.com.br/');
+define('SISTEMA',	'http://sistema.secundum.com.br/');
 
 define('ADMIN',		'admin');
 define('CLEANUP',	'cleanup');
+define('HIST',		'hist.dat');
 define('LAYOUT',	'layout');
 define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'alldefs.ini');
 
@@ -17,17 +19,27 @@ if (empty($CPDEFS)) {
 	$LOCAL = false;
 }
 
-define('CACHE',		'cache');
-define('CACHE_AUTO',CACHE . DIRECTORY_SEPARATOR . 'auto');
-define('CACHE_LOCK',CACHE . DIRECTORY_SEPARATOR . 'lock');
+define('CACHE',			'cache');
+define('CACHE_AUTO',	CACHE . DIRECTORY_SEPARATOR . 'auto');
+define('CACHE_LOCK',	CACHE . DIRECTORY_SEPARATOR . 'lock');
 
 $CFG = parse_ini(TEMPLATE);
 $CFG = array_merge($CFG, parse_ini($CPDEFS));
+
+setlocale(LC_ALL, $CFG['LOCALE']);
 
 $CFG['BASE'] = dirname(empty($_SERVER['PHP_SELF']) ? $_SERVER['SCRIPT_NAME'] : $_SERVER['PHP_SELF']);
 $CFG['BASE'] = str_replace(DIRECTORY_SEPARATOR, '/', $CFG['BASE']);
 $CFG['BASE'] = rtrim($CFG['BASE'], '/');
 $CFG['LOJA_URL'] = 'http://' . $_SERVER['SERVER_NAME'] . $CFG['BASE'];
+
+$CFG['IS_BOT'] = false;
+foreach (explode('|', preg_replace('%\r?\n%s', '', $CFG['BOT_USER_AGENT'])) as $bot) {
+	if (preg_match('%' . preg_quote($bot) . '%i', $_SERVER['HTTP_USER_AGENT'])) {
+		$CFG['IS_BOT'] = true;
+		break;
+	}
+}
 
 if (!function_exists('file_put_contents')) {
 	function file_put_contents($filename, $data) {
@@ -42,19 +54,20 @@ if (!function_exists('file_put_contents')) {
 	}
 }
 if (!function_exists('gzdecode')) {
-	function gzdecode($data) {
-		$len = strlen($data);
-		if ($len < 18 || strcmp(substr($data,0,2),"\x1f\x8b")) {
-			return null;	// Not GZIP format (See RFC 1952)
-		}
+	if (function_exists('readgzfile')) {
+		function gzdecode($data) {
+			$len = strlen($data);
+			if ($len < 18 || strcmp(substr($data,0,2),"\x1f\x8b"))
+				return null;	// Not GZIP format (See RFC 1952)
 
-		$g = tempnam(sys_get_temp_dir(), 'secundum_superloja' . VERSAO);
-		@file_put_contents($g, $data);
-		ob_start();
-		readgzfile($g);
-		@unlink($g);
-		$d = ob_get_clean();
-		return $d;
+			$g = tempnam(sys_get_temp_dir(), 'secundum_superloja' . VERSAO);
+			@file_put_contents($g, $data);
+			ob_start();
+			readgzfile($g);
+			@unlink($g);
+			$d = ob_get_clean();
+			return $d;
+		}
 	}
 }
 if (!function_exists('sys_get_temp_dir')) {
@@ -97,7 +110,7 @@ if ($LOCAL && ($params[0] == LAYOUT) && !empty($params[1])) {
 	if (($TPLstat !== false) && ($filestat !== false) && ($filestat['size'] > 0) && ($TPLstat['mtime'] <= $filestat['mtime'])) {
 		$data = @file_get_contents($file);
 	} else {
-		$data = fetch($file);
+		$data = secundum_fetch(SISTEMA . $file);
 		if (!empty($data)) {
 			@file_put_contents($file, $data);
 			@chmod($file, 0644);
@@ -125,7 +138,15 @@ if ($LOCAL && ($params[0] == LAYOUT) && !empty($params[1])) {
 		}
 	}
 } elseif ($params[0] == ADMIN) {
-	if ($_POST['_pwd'] == $CFG['SENHA_ADMIN']) {
+	@ob_start('ob_gzhandler');
+	session_start();
+
+	$now = time();
+
+	if ((!empty($_SESSION['START']) && is_numeric($_SESSION['START']) && ($now - $_SESSION['START'] < 1800)) || ($_POST['_pwd'] == $CFG['SENHA_ADMIN'])) {
+		$_SESSION['START']		= $now;
+		$_SESSION['LOJA_URL']	= $CFG['LOJA_URL'];
+
 		if ($_POST['_save']) {
 			$ch = @fopen($CPDEFS, 'w');
 			foreach ($_POST as $key => $val) {
@@ -148,10 +169,12 @@ if ($LOCAL && ($params[0] == LAYOUT) && !empty($params[1])) {
 			rmdir_r(CACHE, -1);
 		}
 
-		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 3.2//EN\">
-<html>
+		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">
+<html xmlns=\"http://www.w3.org/1999/xhtml\">
 <head>
-<title>Controle da loja</title>
+<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />
+<title>$CFG[ADMIN_TITULO]</title>
+<script type=\"text/javascript\" src=\"controle/swfobject.js\"></script>
 <script type=\"text/javascript\">
 function fnum(x) {
 	return x.replace(/\D/g, '');
@@ -164,14 +187,33 @@ function furl(x) {
 	x = x.replace(/\s/g, '');
 	return x;
 }
+
+swfobject.embedSWF(
+\"controle/open-flash-chart.swf\", \"stats\",
+\"635\", \"500\", \"9.0.0\", \"controle/expressInstall.swf\",
+{\"data-file\":\"chart.php\",\"loading\":\"Carregando...\"} );
 </script>
+<script language=\"javascript\" type=\"text/javascript\" src=\"controle/niceforms.js\"></script>
+<link rel=\"stylesheet\" type=\"text/css\" media=\"all\" href=\"controle/niceforms.css\" />
+<style type=\"text/css\"> 
+.sunken {
+border-color: #666661 #FFFFFF #FFFFFF #666661;
+border-style: solid;
+border-width: 1px;
+width: 635px;
+height: 500px;
+margin: 0px;
+padding: 0px;
+}
+</style>
 </head>
 <body>
-<h1>Controle da loja</h1>
-<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\">
-<input type=\"hidden\" value=\"1\" name=\"_save\">
-<input type=\"hidden\" value=\"$CFG[SENHA_ADMIN]\" name=\"_pwd\">
-<table border=\"0\" summary=\"\">
+<div id=\"container\">
+<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\" class=\"niceform\">
+<fieldset>
+<legend>$CFG[ADMIN_TITULO]</legend>
+<input type=\"hidden\" value=\"1\" name=\"_save\" />
+<input type=\"hidden\" value=\"$CFG[SENHA_ADMIN]\" name=\"_pwd\" />
 ";
 		
 		if ($LOCAL) {
@@ -207,69 +249,132 @@ function furl(x) {
 
 				$val = htmlentities($CFG[$key]);
 
-				echo "<tr>
-	<td align=\"right\" valign=\"top\"><b>$title</b></td>
-	<td>
+				echo "<dl>
+<dt><label for=\"$key\">$title</label></dt>
+<dd>
 ";
 				if ($type[0] == 'a') {
 					echo "<textarea name=\"$key\" cols=\"80\" rows=\"20\">$val</textarea>\n";
 				} else {
-					echo "<input type=\"text\" name=\"$key\" value=\"$val\" size=\"60\" maxlength=\"$len\" $filter>\n";
+					echo "<input type=\"text\" name=\"$key\" value=\"$val\" size=\"60\" maxlength=\"$len\" $filter />\n";
 				}
-				echo "</td></tr>\n";
+				echo "</dd></dl>\n";
 			}
 		}
 
+		echo "
+</fieldset>
+<fieldset>
+<legend>$CFG[ADMIN_ABA]</legend>
+";
+
 		if ($LOCAL) {
 			echo "
-<tr>
-	<td align=\"right\"><b>Limpar cache:</b></td>
-	<td><input type=\"checkbox\" name=\"_cache_reset\"></td>
-</tr>";
+<dl>
+<dt><label for=\"_cache_reset\">$CFG[ADMIN_CACHE]</label></dt>
+<dd><input type=\"checkbox\" name=\"_cache_reset\" /></dd>
+</dl>";
+		}
+
+		$google	= floor(googleidx($CFG['LOJA_URL']) / 1000) . 'k';
+		$end	= hist(false, 1);
+		$begin	= hist(false, 2);
+
+		$since	= utf8_encode(strftime($CFG['STRFTIME'], $begin[2]));
+
+		$update = '';
+		if (VERSAO != $CFG['UPDATE']) {
+			$update = $CFG['ADMIN_DOWNLOAD'];
 		}
 
 		echo "
-<tr>
-	<td align=\"right\"><b>Restaurar configura&ccedil;&otilde;es originais:</b></td>
-	<td><input type=\"checkbox\" name=\"_default\"></td>
-</tr>
-<tr>
-	<td colspan=\"2\" align=\"center\"><input type=\"submit\" value=\"Salvar\"></td>
-</tr>
-</table>
+<dl>
+<dt><label for=\"_default\">$CFG[ADMIN_RESTAURA]</label></dt>
+<dd><input type=\"checkbox\" name=\"_default\" /></dd>
+</dl>
+</fieldset>
+<fieldset class=\"action\">
+<input type=\"submit\" value=\"$CFG[ADMIN_SALVA]\" />
+<button type=\"button\" onclick=\"location.href='$CFG[LOJA_URL]/'\">$CFG[ADMIN_ROOT]" . VERSAO . "</button>
+$update
+</fieldset>
 </form>
-<a href=\"$CFG[LOJA_URL]/\">Ir para a loja V" . VERSAO . "</a>
+<fieldset>
+<legend>$CFG[ADMIN_STATS]</legend>
+<div class=\"sunken\">
+<div id=\"stats\"></div>
+</div>
+<dl>
+<dt><label>$CFG[ADMIN_ONLINE]</label></dt>
+<dd>$since</dd>
+</dl>
+<dl>
+<dt><label>$CFG[ADMIN_INDEX]</label></dt>
+<dd>$google</dd>
+</dl>
+<dl>
+<dt><label>$CFG[ADMIN_HITS]</label></dt>
+<dd>$end[0]</dd>
+</dl>
+<dl>
+<dt><label>$CFG[ADMIN_CLICKS]</label></dt>
+<dd>$end[1]</dd>
+</dl>
+$CFG[ADMIN_OBS]
+</fieldset>
 $CFG[SECUNDUM_CPANEL]
-</body></html>
+</div>
+</body>
+</html>
 ";
 	} else {
-		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 3.2//EN\">
-<html>
+		foreach ($CFG as $k => $v) {
+			if (substr($k, 0, 14) == 'CP_SENHA_ADMIN') {
+				$senha = $v;
+				break;
+			}
+		}
+
+		echo "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">
+<html xmlns=\"http://www.w3.org/1999/xhtml\">
 <head>
-<title>Controle da loja</title>
+<meta http-equiv=\"Content-Type\" content=\"text/html; charset=utf-8\" />
+<title>$CFG[ADMIN_TITULO]</title>
+<script language=\"javascript\" type=\"text/javascript\" src=\"controle/niceforms.js\"></script>
+<link rel=\"stylesheet\" type=\"text/css\" media=\"all\" href=\"controle/niceforms.css\" />
 </head>
 <body>
-<center>
-<h1>Controle da loja</h1>
-<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\">
-Senha: <input type=\"password\" name=\"_pwd\">
-<input type=\"submit\" value=\"Entrar\">
+<div id=\"container\">
+<form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\" class=\"niceform\">
+<fieldset>
+<legend>$CFG[ADMIN_TITULO]</legend>
+<dl>
+<dt><label for=\"_pwd\">$senha</label></dt>
+<dd><input type=\"password\" name=\"_pwd\" /><input type=\"submit\" value=\"Login\" /></dd>
+</dl>
+</fieldset>
 </form>
-</center>
+</div>
 </body>
 </html>
 ";
 	}
 } elseif ($params[0] == 'clique') {
-	header(sprintf('Location: %s/%s', CLIQUE, implode('/', array_slice($params, 1))));
+	hist(true);
+
+	header(sprintf('Location: %s%s', CLIQUE, implode('/', array_slice($params, 1))));
 } elseif ($LOCAL && !empty($localpath) && file_exists($localpath) && (substr($localpath, -4) != '.ini')) {
 	$data = @file_get_contents($localpath);
 	fix_header($localpath);
 	echo $data;
 } else {
+	hist();
+
+	/*
 	header('Cache-Control: no-cache, must-revalidate');
 	header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
 	header('Pragma: no-cache');
+	*/
 	header('Content-Type: text/html; charset=utf-8');
 	@ob_start('ob_gzhandler');
 
@@ -284,34 +389,18 @@ Senha: <input type=\"password\" name=\"_pwd\">
 			$cached_file = my_cached($CFG['BUSCA_URL']);
 			if (file_exists($cached_file)) {
 				$page = @file_get_contents($cached_file);
-
-				$tmp = gzdecode($page);
-				if (!$tmp) {
-					$tmp = $page;
-				}
+				if ($tmp = gzdecode($page))
+					$page = $tmp;
 			}
 		}
 
 		if (empty($page)) {
-			$page = fetch(sprintf('sistema.php?p1=%s&p2=%s', $CFG['LOJA_URL'], $CFG['BUSCA_URL']));
+			$page = secundum_fetch(SISTEMA . sprintf('sistema.php?p1=%s&p2=%s', $CFG['LOJA_URL'], $CFG['BUSCA_URL']));
 
-			$tmp = gzdecode($page);
-			if (!$tmp) {
-				$tmp = $page;
-			}
-
-			if (!$tmp || (substr($tmp, 0, 4) != 'SEC5')) {
+			if (substr($page, 0, 4) != 'SEC5') {
 				echo($page);
 				exit();
 			} else {
-				$CFG['IS_BOT'] = false;
-				foreach (explode('|', preg_replace('%\r?\n%s', '', $CFG['BOT_USER_AGENT'])) as $bot) {
-					if (preg_match('%' . preg_quote($bot) . '%i', $_SERVER['HTTP_USER_AGENT'])) {
-						$CFG['IS_BOT'] = true;
-						break;
-					}
-				}
-
 				if (!empty($cached_file) && !$CFG['IS_BOT']) {
 					my_mkdir_recursive(dirname($cached_file), 0777);
 
@@ -321,11 +410,10 @@ Senha: <input type=\"password\" name=\"_pwd\">
 			}
 		}
 
-		preg_match('%^SEC5\s+(.+?)\r?\n%s', $tmp, $m);
+		preg_match('%^SEC5\s+(.+?)\r?\n%s', $page, $m);
 		if (($TPLstat === false) || !$TPLstat['size'] || ($TPLstat['mtime'] < strtotime($m[1]))) {
-			update_template();
+			update_template(true);
 		}
-		$page = $tmp;
 	} else {
 		include_once 'busca.php';
 		$page = busca($CFG['LOJA_URL'], $CFG['BUSCA_URL']);
@@ -396,13 +484,16 @@ function parse_ini($file, $trim = true) {
 	return $array;
 }
 
-function update_template($modif) {
+function update_template($cache = false) {
 	global $CFG;
-	$TPL = fetch(TEMPLATE);
+	$TPL = secundum_fetch(SISTEMA . TEMPLATE);
 	if (!empty($TPL)) {
 		@file_put_contents(TEMPLATE, $TPL);
 		@chmod(TEMPLATE, 0644);
-		@touch(CACHE_AUTO);
+
+		if ($cache) {
+			@touch(CACHE_AUTO);
+		}
 
 		$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
 	}
@@ -466,16 +557,54 @@ function my_cached($busca) {
 	return implode(DIRECTORY_SEPARATOR, $cached);
 }
 
-function fetch($url) {
-	$ips = gethostbynamel('secundum.com.br');
-	$url = sprintf('http://%s/sis5/%s', $ips[rand(0, count($ips) - 1)], str_replace(DIRECTORY_SEPARATOR, '/', $url));
+function secundum_fetch($url, $ref = '') {
+	$gzip		= function_exists('gzdecode');
 
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $url);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-	$buf = curl_exec($ch);
-	curl_close($ch);
+	for ($try = 0; $try < 5; $try++) {
+		$p			= parse_url($url);
+		$host		= $p['host'];
+		$port		= empty($p['port']) ? 80 : $p['port'];
+		$file		= str_replace(DIRECTORY_SEPARATOR, '/', $p['path']) . (empty($p['query']) ? '' : '?' . $p['query']);
+		$ips		= gethostbynamel($host);
+
+		$req		= "GET $file HTTP/1.0\r\n";
+		$req		.= "Host: $host\r\n";
+		$req		.= 'User-Agent: secundum superloja v' . VERSAO . "\r\n";
+		if ($gzip)
+			$req	.= "Accept-Encoding: gzip\r\n";
+		if ($ref)
+			$req	.= "Referer: $ref\r\n";
+		$req		.= "\r\n";
+
+		$res		= '';
+		$hdr		= array();
+		$buf		= '';
+
+		if (false != ($fs = @fsockopen($ips[rand(0, count($ips) - 1)], 80, $errno, $errstr, 15))) {
+			fwrite($fs, $req);
+			while (!feof($fs) && (strlen($res) < 0x19000))	// 100 KB limit
+				$res .= fgets($fs, 1160);					// One TCP-IP packet
+			fclose($fs);
+
+			list($tmp, $res) = preg_split('%\r?\n\r?\n%', $res, 2);
+
+			$tmp = preg_split('%\r?\n%', $tmp, -1, PREG_SPLIT_NO_EMPTY);
+			$cod = array_shift($tmp);
+			if (preg_match('%^HTTP/(1\.[01])\s+([0-9]{3})\s+(.+)$%i', $cod, $match)) {
+				$cod = $match[2];
+
+				foreach ($tmp as $line)
+					if (preg_match('%^([A-Z-a-z\-]+):\s*(.+)$%', $line, $match))
+						$hdr[strtolower($match[1])] = $match[2];
+
+				if ($cod == 200) {
+					$buf = ($gzip && ($hdr['content-encoding'] == 'gzip')) ? gzdecode($res) : $res;
+					break;
+				} else if (($cod >= 301) && ($cod <= 303) && !empty($hdr['location']))
+					$url = $hdr['location'];
+			}
+		}
+	}
 
 	return $buf;
 }
@@ -504,6 +633,74 @@ function get_include_contents($filename) {
 		return $contents;
 	}
 	return false;
+}
+
+function hist($is_click = false, $mode = 0) {
+	$now	= ceil(time() / 3600) * 3600;
+	$since	= $now;
+	$pgs	= 0;
+	$clk	= 0;
+
+	@touch(HIST);
+
+	// waiting until file will be locked for writing (1000 milliseconds as timeout)
+	if ($fp = fopen(HIST, $mode ? 'rb' : 'r+b')) {
+		$startTime = microtime();
+		do {
+			$canWrite = flock($fp, LOCK_EX);
+			// If lock not obtained sleep for 0 - 100 milliseconds, to avoid collision and CPU load
+			if (!$canWrite) {
+				usleep(round(rand(0, 100) * 1000));
+			}
+		} while (!$canWrite && ((microtime() - $startTime) < 1000));
+
+		// file was locked so now we can store information
+		if ($canWrite) {
+			if ($mode != 2) {
+				fseek($fp, -12, SEEK_END);
+			}
+
+			$buf = fread($fp, 12);
+			if ($buf) {
+				$row = unpack('Nstamp/Npgs/Nclk', $buf);
+
+				if ($row['stamp'] == $now) {
+					fseek($fp, -12, SEEK_END);
+				} else {
+					$since = $row['stamp'];
+					fseek($fp, 0, SEEK_END);
+				}
+
+				$pgs = $row['pgs'];
+				$clk = $row['clk'];
+			}
+
+			if ($mode == 0) {
+				if ($is_click) {
+					++$clk;
+				} else {
+					++$pgs;
+				}
+
+				fwrite($fp, pack('N*', $now, $pgs, $clk));
+			}
+		}
+
+		fclose($fp);
+	}
+
+	return array($pgs, $clk, $since);
+}
+
+function googleidx($site) {
+	$buf = secundum_fetch("http://www.google.com/search?safe=off&num=1&q=site:$site", "http://$site/");
+
+	$site = preg_quote($site);
+	if (preg_match('%(aproximadamente|about) <b>([0-9,\.]+)</b> (de|from)%is', $buf, $m)) {
+		return preg_replace('%[^0-9]%', '', $m[2]);
+	} else {
+		return 0;
+	}
 }
 
 ?>

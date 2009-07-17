@@ -73,12 +73,7 @@ function RSS_Retrieve($url)
 {
 	global $RSS_Content;
 
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $url);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-	$buf = curl_exec($ch);
-	curl_close($ch);
+	$buf = secundum_fetch($url);
 
 	$doc  = new DOMDocument();
 	$doc->loadXML($buf);
@@ -99,12 +94,7 @@ function RSS_RetrieveLinks($url)
 {
 	global $RSS_Content;
 
-	$ch = curl_init();
-	curl_setopt($ch, CURLOPT_URL, $url);
-	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
-	$buf = curl_exec($ch);
-	curl_close($ch);
+	$buf = secundum_fetch($url);
 
 	$doc  = new DOMDocument();
 	$doc->loadXML($buf);
