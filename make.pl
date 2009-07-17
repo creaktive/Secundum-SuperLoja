@@ -31,7 +31,7 @@ delete $f{$_} foreach qw(
 	array empty isset unset
 	echo exit
 	set_time_limit
-	location.href.substr x.replace
+	busca location.href.substr x.replace
 );
 my $check = "array('" . join ("','", sort keys %f) . "')";
 
@@ -49,12 +49,16 @@ error_reporting(0);
 HEADER
 ;
 
-undeploy('a/.htaccess');
-undeploy('a/index.php');
-undeploy('b/.htaccess');
-undeploy('index.php');
-undeploy('rsslib.php');
-undeploy('feeds.php');
+undeploy ('a/.htaccess');
+undeploy ('a/index.php');
+undeploy ('b/.htaccess');
+undeploy ('index.php');
+undeploy ('rsslib.php');
+undeploy ('feeds.php');
+
+for (1..10) {
+	undeploy (sprintf ('imagens/%03d.jpg', $_));
+}
 
 ############ PHP CODE ############
 print INST<<BODY
@@ -62,7 +66,7 @@ print INST<<BODY
 
 \$base = dirname(empty(\$_SERVER['PHP_SELF']) ? \$_SERVER['SCRIPT_NAME'] : \$_SERVER['PHP_SELF']);
 \$base = str_replace(DIRECTORY_SEPARATOR, '/', \$base);
-\$base = trim(\$base, '/');
+\$base = rtrim(\$base, '/');
 \$url = 'http://' . \$_SERVER['SERVER_NAME'] . \$base;
 
 function deploy(\$file, \$out, \$gz){
@@ -197,6 +201,11 @@ FORM;
 	deploy('index.php');
 	deploy('rsslib.php');
 	deploy('feeds.php');
+
+	mkdir_chmod('imagens', 0755);
+	for (\$i = 1; \$i <= 10; \$i++) {
+		deploy(sprintf('imagens/%03d.jpg', \$i));
+	}
 
 	header('Location: admin');
 	\@unlink(__FILE__);

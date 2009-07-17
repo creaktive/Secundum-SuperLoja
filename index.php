@@ -1,41 +1,33 @@
 <?php
 
-define('VERSAO',	'5.0');
-define('API',		'sistema.php');
+error_reporting(0);
+
+define('VERSAO',	'5.1');
 define('CLIQUE',	'http://clique.secundum.com.br');
 
 define('ADMIN',		'admin');
-define('CPDEFS',	'cpdefs.ini');
+define('CLEANUP',	'cleanup');
+define('LAYOUT',	'layout');
+define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'alldefs.ini');
+
+if (empty($CPDEFS)) {
+	$CPDEFS = 'cpdefs.ini';
+	$LOCAL = true;
+} else {
+	$LOCAL = false;
+}
 
 define('CACHE',		'cache');
 define('CACHE_AUTO',CACHE . DIRECTORY_SEPARATOR . 'auto');
 define('CACHE_LOCK',CACHE . DIRECTORY_SEPARATOR . 'lock');
-define('CLEANUP',	'cleanup');
 
-define('LAYOUT',	'layout');
-define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'alldefs.ini');
+$CFG = parse_ini(TEMPLATE);
+$CFG = array_merge($CFG, parse_ini($CPDEFS));
 
-error_reporting(0);
-
-$ips = gethostbynamel('secundum.com.br');
-define('SERVIDOR', sprintf('http://%s/sis5/', $ips[rand(0, count($ips) - 1)]));
-
-$base = dirname(empty($_SERVER['PHP_SELF']) ? $_SERVER['SCRIPT_NAME'] : $_SERVER['PHP_SELF']);
-$base = str_replace(DIRECTORY_SEPARATOR, '/', $base);
-$base = trim($base, '/');
-$dir = dirname($out);
-$dir = trim($dir, DIRECTORY_SEPARATOR);
-$dir = ltrim($dir, '.');
-$dir = empty($base) ? "/$dir" : "/$base/$dir";
-if (substr($dir, -1, 1) != '/') {
-	$dir .= '/';
-}
-$CFG = array();
-$CFG['LOJA_URI'] = $dir;
-
-$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
-$CFG = array_merge($CFG, parse_ini('mydefs.ini'));
-$CFG = array_merge($CFG, parse_ini(CPDEFS));
+$CFG['BASE'] = dirname(empty($_SERVER['PHP_SELF']) ? $_SERVER['SCRIPT_NAME'] : $_SERVER['PHP_SELF']);
+$CFG['BASE'] = str_replace(DIRECTORY_SEPARATOR, '/', $CFG['BASE']);
+$CFG['BASE'] = rtrim($CFG['BASE'], '/');
+$CFG['LOJA_URL'] = 'http://' . $_SERVER['SERVER_NAME'] . $CFG['BASE'];
 
 if (!function_exists('file_put_contents')) {
 	function file_put_contents($filename, $data) {
@@ -80,9 +72,9 @@ if (!function_exists('sys_get_temp_dir')) {
 
 if ($query = $_GET['query']) {
 	if (preg_match('%busca=(.+)%', $query, $q)) {
-		header('Location: ' . $CFG['LOJA_URI'] . preg_replace('%\s+%', '-', $q[1]));
+		header('Location: ' . $CFG['LOJA_URL'] . '/' . preg_replace('%\s+%', '-', $q[1]));
 	} else {
-		header('Location: ' . $CFG['LOJA_URI']);
+		header('Location: ' . $CFG['LOJA_URL'] . '/');
 	}
 	exit();
 }
@@ -93,17 +85,19 @@ foreach (preg_split('%/%', normalize($_GET['uri']), -1, PREG_SPLIT_NO_EMPTY) as 
 }
 $localpath = implode(DIRECTORY_SEPARATOR, $params);
 
-mkdir_chmod(LAYOUT, 0755);
-$TPLstat = @stat(TEMPLATE);
+if ($LOCAL) {
+	my_mkdir_chmod(LAYOUT, 0755);
+	$TPLstat = @stat(TEMPLATE);
+}
 
-if (($params[0] == LAYOUT) && !empty($params[1])) {
+if ($LOCAL && ($params[0] == LAYOUT) && !empty($params[1])) {
 	$file = LAYOUT . DIRECTORY_SEPARATOR . $params[1];
 	$filestat = @stat($file);
 
 	if (($TPLstat !== false) && ($filestat !== false) && ($filestat['size'] > 0) && ($TPLstat['mtime'] <= $filestat['mtime'])) {
 		$data = @file_get_contents($file);
 	} else {
-		$data = fetch(SERVIDOR . $file);
+		$data = fetch($file);
 		if (!empty($data)) {
 			@file_put_contents($file, $data);
 			@chmod($file, 0644);
@@ -112,7 +106,7 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 
 	fix_header($params[1]);
 	echo $data;
-} elseif ($params[0] == CLEANUP) {
+} elseif ($LOCAL && ($params[0] == CLEANUP)) {
 	header('Cache-Control: no-cache, must-revalidate');
 	header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
 	header('Pragma: no-cache');
@@ -133,7 +127,7 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 } elseif ($params[0] == ADMIN) {
 	if ($_POST['_pwd'] == $CFG['SENHA_ADMIN']) {
 		if ($_POST['_save']) {
-			$ch = @fopen(CPDEFS, 'w');
+			$ch = @fopen($CPDEFS, 'w');
 			foreach ($_POST as $key => $val) {
 				if ($key[0] != '_') {
 					if (!(($_POST['_default'] == 'on') && !in_array($key, explode('|', preg_replace('%\r?\n%s', '', $CFG['CUSTOM']))))) {
@@ -150,7 +144,7 @@ if (($params[0] == LAYOUT) && !empty($params[1])) {
 			fclose($ch);
 		}
 
-		if ($_POST['_cache_reset'] == 'on') {
+		if ($LOCAL && ($_POST['_cache_reset'] == 'on')) {
 			rmdir_r(CACHE, -1);
 		}
 
@@ -172,15 +166,17 @@ function furl(x) {
 }
 </script>
 </head>
-<body onload=\"if(!document.cpanel.main.value)document.cpanel.main.value=location.href.substr(0,location.href.length-6);\">
+<body>
 <h1>Controle da loja</h1>
 <form method=\"post\" action=\"" . ADMIN . "\" name=\"cpanel\" id=\"cpanel\">
 <input type=\"hidden\" value=\"1\" name=\"_save\">
 <input type=\"hidden\" value=\"$CFG[SENHA_ADMIN]\" name=\"_pwd\">
 <table border=\"0\" summary=\"\">
 ";
-			
-		update_template();
+		
+		if ($LOCAL) {
+			update_template();
+		}
 
 		foreach ($CFG as $key => $title) {
 			if (substr($key, 0, 3) == 'CP_') {
@@ -205,13 +201,6 @@ function furl(x) {
 					case 'u':
 						$filter = 'onkeyup="this.value=furl(this.value);"';
 						break;
-					case 'U':
-						if (empty($CFG['LOJA_URL']) && $_SERVER['SERVER_NAME'] && $_SERVER['PHP_SELF']) {
-							$CFG['LOJA_URL'] = sprintf('http://%s%s', $_SERVER['SERVER_NAME'], str_replace(DIRECTORY_SEPARATOR, '/', dirname($_SERVER['PHP_SELF'])));
-						}
-						$CFG['LOJA_URL'] = rtrim($CFG['LOJA_URL'], '/');
-						$filter = 'onkeyup="this.value=furl(this.value);" name="main" id="main"';
-						break;
 					default:
 						$filter = '';
 				}
@@ -231,11 +220,15 @@ function furl(x) {
 			}
 		}
 
-		echo "
+		if ($LOCAL) {
+			echo "
 <tr>
 	<td align=\"right\"><b>Limpar cache:</b></td>
 	<td><input type=\"checkbox\" name=\"_cache_reset\"></td>
-</tr>
+</tr>";
+		}
+
+		echo "
 <tr>
 	<td align=\"right\"><b>Restaurar configura&ccedil;&otilde;es originais:</b></td>
 	<td><input type=\"checkbox\" name=\"_default\"></td>
@@ -245,7 +238,7 @@ function furl(x) {
 </tr>
 </table>
 </form>
-<a href=\"$CFG[LOJA_URL]\">Ir para a loja V" . VERSAO . "</a>
+<a href=\"$CFG[LOJA_URL]/\">Ir para a loja V" . VERSAO . "</a>
 $CFG[SECUNDUM_CPANEL]
 </body></html>
 ";
@@ -269,7 +262,7 @@ Senha: <input type=\"password\" name=\"_pwd\">
 	}
 } elseif ($params[0] == 'clique') {
 	header(sprintf('Location: %s/%s', CLIQUE, implode('/', array_slice($params, 1))));
-} elseif (!empty($localpath) && file_exists($localpath) && (substr($localpath, -4) != '.ini')) {
+} elseif ($LOCAL && !empty($localpath) && file_exists($localpath) && (substr($localpath, -4) != '.ini')) {
 	$data = @file_get_contents($localpath);
 	fix_header($localpath);
 	echo $data;
@@ -280,57 +273,64 @@ Senha: <input type=\"password\" name=\"_pwd\">
 	header('Content-Type: text/html; charset=utf-8');
 	@ob_start('ob_gzhandler');
 
-	$busca = $params[0];
-	if (empty($busca) && $CFG['DEFAULT_SEARCH']) {
-		$busca = preg_replace('%\s+%s', '-', strtolower($CFG['DEFAULT_SEARCH']));
+	$CFG['BUSCA_URL'] = $params[0];
+	if (empty($CFG['BUSCA_URL']) && $CFG['DEFAULT_SEARCH']) {
+		$CFG['BUSCA_URL'] = preg_replace('%\s+%s', '-', strtolower($CFG['DEFAULT_SEARCH']));
 	}
+	$CFG['BUSCA_STR'] = str_replace('-', ' ', $CFG['BUSCA_URL']);
 
-	if (!empty($busca)) {
-		$cached_file = cached();
-		if (file_exists($cached_file)) {
-			$page = @file_get_contents($cached_file);
+	if ($LOCAL) {
+		if (!empty($CFG['BUSCA_URL'])) {
+			$cached_file = my_cached($CFG['BUSCA_URL']);
+			if (file_exists($cached_file)) {
+				$page = @file_get_contents($cached_file);
+
+				$tmp = gzdecode($page);
+				if (!$tmp) {
+					$tmp = $page;
+				}
+			}
+		}
+
+		if (empty($page)) {
+			$page = fetch(sprintf('sistema.php?p1=%s&p2=%s', $CFG['LOJA_URL'], $CFG['BUSCA_URL']));
 
 			$tmp = gzdecode($page);
 			if (!$tmp) {
 				$tmp = $page;
 			}
-		}
-	}
 
-	if (empty($page)) {
-		$page = fetch(sprintf('%s%s?p1=%s&p2=%s', SERVIDOR, API, $CFG['LOJA_URL'], $busca));
+			if (!$tmp || (substr($tmp, 0, 4) != 'SEC5')) {
+				echo($page);
+				exit();
+			} else {
+				$CFG['IS_BOT'] = false;
+				foreach (explode('|', preg_replace('%\r?\n%s', '', $CFG['BOT_USER_AGENT'])) as $bot) {
+					if (preg_match('%' . preg_quote($bot) . '%i', $_SERVER['HTTP_USER_AGENT'])) {
+						$CFG['IS_BOT'] = true;
+						break;
+					}
+				}
 
-		$tmp = gzdecode($page);
-		if (!$tmp) {
-			$tmp = $page;
-		}
+				if (!empty($cached_file) && !$CFG['IS_BOT']) {
+					my_mkdir_recursive(dirname($cached_file), 0777);
 
-		if (!$tmp || (substr($tmp, 0, 4) != 'SEC5')) {
-			echo($page);
-			exit();
-		} else {
-			$is_bot = false;
-			foreach (explode('|', preg_replace('%\r?\n%s', '', $CFG['BOT_USER_AGENT'])) as $bot) {
-				if (preg_match('%' . preg_quote($bot) . '%i', $_SERVER['HTTP_USER_AGENT'])) {
-					$is_bot = true;
-					break;
+					@file_put_contents($cached_file, $page);
+					@chmod($cached_file, 0644);
 				}
 			}
-
-			if (!empty($cached_file) && !$is_bot) {
-				mkdir_recursive(dirname($cached_file), 0777);
-
-				@file_put_contents($cached_file, $page);
-				@chmod($cached_file, 0644);
-			}
 		}
-	}
 
-	preg_match('%^SEC5\s+(.+?)\r?\n%s', $tmp, $m);
-	if (($TPLstat === false) || !$TPLstat['size'] || ($TPLstat['mtime'] < strtotime($m[1]))) {
-		update_template();
+		preg_match('%^SEC5\s+(.+?)\r?\n%s', $tmp, $m);
+		if (($TPLstat === false) || !$TPLstat['size'] || ($TPLstat['mtime'] < strtotime($m[1]))) {
+			update_template();
+		}
+		$page = $tmp;
+	} else {
+		include_once 'busca.php';
+		$page = busca($CFG['LOJA_URL'], $CFG['BUSCA_URL']);
 	}
-	$page = preg_replace('%^.*?(\r?\n)+%', '', $tmp);
+	$page = preg_replace('%^.*?(\r?\n)+%', '', $page);
 
 	foreach ($CFG as $key => $val) {
 		$buf = '';
@@ -352,18 +352,6 @@ Senha: <input type=\"password\" name=\"_pwd\">
 exit();
 
 
-function update_template($modif) {
-	global $CFG;
-	$TPL = fetch(SERVIDOR . TEMPLATE);
-	if (!empty($TPL)) {
-		@file_put_contents(TEMPLATE, $TPL);
-		@chmod(TEMPLATE, 0644);
-		@touch(CACHE_AUTO);
-
-		$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
-	}
-}
-
 function condense($str) {
 	return preg_replace('%\r?\n%', '', $str);
 }
@@ -374,7 +362,7 @@ function normalize($str, $human = false) {
 	$str = html_entity_decode($str);
 	$str = strtolower($str);
 
-	$str = strtr($str, "¬∫¬™`¬¥√á√ß√ë√±√É√ï√£√µ√Ç√ä√é√î√õ√¢√™√Æ√¥√ª√Ä√à√å√í√ô√†√®√¨√≤√π√Å√â√ç√ì√ö√°√©√≠√≥√∫√Ñ√ã√è√ñ√ú√§√´√Ø√∂√º", "oa''ccnnaoaoaeiouaeiouaeiouaeiouaeiouaeiouaeiouaeiou");
+	$str = strtr($str, "∫™`¥«Á—Ò√’„ı¬ Œ‘€‚ÍÓÙ˚¿»Ã“Ÿ‡ËÏÚ˘¡…Õ”⁄·ÈÌÛ˙ƒÀœ÷‹‰ÎÔˆ¸", "oa''ccnnaoaoaeiouaeiouaeiouaeiouaeiouaeiouaeiouaeiou");
 
 	if ($human) {
 		$str = preg_replace('%\W+%', ' ', $str);
@@ -406,6 +394,18 @@ function parse_ini($file, $trim = true) {
 		fclose($dh);
 	}
 	return $array;
+}
+
+function update_template($modif) {
+	global $CFG;
+	$TPL = fetch(TEMPLATE);
+	if (!empty($TPL)) {
+		@file_put_contents(TEMPLATE, $TPL);
+		@chmod(TEMPLATE, 0644);
+		@touch(CACHE_AUTO);
+
+		$CFG = array_merge(parse_ini(TEMPLATE), $CFG);
+	}
 }
 
 function rmdir_r($directory, $age) {
@@ -445,19 +445,17 @@ function rmdir_r($directory, $age) {
 	return TRUE;
 }
 
-function mkdir_chmod($pathname, $mode) {
+function my_mkdir_chmod($pathname, $mode) {
 	@mkdir($pathname, $mode);
 	@chmod($pathname, $mode);
 }
 
-function mkdir_recursive($pathname, $mode) {
-    is_dir(dirname($pathname)) || mkdir_recursive(dirname($pathname), $mode);
-    return is_dir($pathname) || mkdir_chmod($pathname, $mode);
+function my_mkdir_recursive($pathname, $mode) {
+    is_dir(dirname($pathname)) || my_mkdir_recursive(dirname($pathname), $mode);
+    return is_dir($pathname) || my_mkdir_chmod($pathname, $mode);
 }
 
-function cached() {
-	global $busca;
-
+function my_cached($busca) {
 	$cached = array();
 	array_push($cached, CACHE);
 	for ($i = 1; $i <= 3; $i++) {
@@ -469,13 +467,16 @@ function cached() {
 }
 
 function fetch($url) {
-	$url = str_replace(DIRECTORY_SEPARATOR, '/', $url);
+	$ips = gethostbynamel('secundum.com.br');
+	$url = sprintf('http://%s/sis5/%s', $ips[rand(0, count($ips) - 1)], str_replace(DIRECTORY_SEPARATOR, '/', $url));
+
 	$ch = curl_init();
 	curl_setopt($ch, CURLOPT_URL, $url);
 	curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
 	curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 15);
 	$buf = curl_exec($ch);
 	curl_close($ch);
+
 	return $buf;
 }
 
