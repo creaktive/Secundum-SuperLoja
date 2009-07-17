@@ -1,0 +1,25 @@
+COMO INSTALAR
+
+Apague todo o conteúdo da pasta em que esteja localizada a loja
+
+Caso você esteja utilizando um subdomínio, não apague a pasta cgi-bin
+
+Suba o arquivo loja3.9.php para a pasta da loja
+
+Acesse pelo browser o endereço da loja seguido do nome do arquivo
+
+EXEMPLOS
+
+Se sua loja for loja.minhaloja.com, acesse http://loja.minhaloja.com/loja3.9.php
+
+Se sua loja for minhaloja.com/loja, acesse http://minhaloja.com/loja/loja3.9.php
+
+Preencha o CPF no campo (apenas os 11 números) e clique no botão
+
+Pronto, sua loja está instalada
+
+Qualquer dúvida ou problema sinta-se à vontade em falar
+
+msn:   jobsonlb@hotmail.com
+
+gtalk: jobsonlb@gmail.com
