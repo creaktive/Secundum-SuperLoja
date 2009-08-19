@@ -1,4 +1,5 @@
 RewriteEngine On
 RewriteBase @URI@
+RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME} !\.php$
 RewriteRule ^(.*)$ index.php?uri=$1&query=%{QUERY_STRING} [L]

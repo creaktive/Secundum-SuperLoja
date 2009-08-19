@@ -75,14 +75,13 @@ undeploy ('b/.htaccess');
 undeploy ('index.php');
 undeploy ('rsslib.php');
 undeploy ('feeds.php');
-undeploy ('chart.php');
 undeploy ('robots.txt');
 
 for (1..10) {
 	undeploy (sprintf ('imagens/%03d.jpg', $_));
 }
 
-foreach (qw(expressInstall.swf swfobject.js open-flash-chart.swf niceforms.css niceforms.js 0.png button.png button-left.png button-right.png checkbox.png file.png input.png input-left.png input-right.png radio.png select-left.png select-right.png textarea-bl.png textarea-br.png textarea-l-off.png textarea-l-over.png textarea-r-off.png textarea-r-over.png textarea-tl.png textarea-tr.png)) {
+foreach (qw(niceforms.css niceforms.js 0.png button.png button-left.png button-right.png checkbox.png file.png input.png input-left.png input-right.png radio.png select-left.png select-right.png textarea-bl.png textarea-br.png textarea-l-off.png textarea-l-over.png textarea-r-off.png textarea-r-over.png textarea-tl.png textarea-tr.png)) {
 	undeploy ("controle/$_");
 }
 
@@ -226,6 +225,9 @@ FORM;
 
 	echo "</td></tr></table></body></html>";
 } else {
+	foreach (array('hist.dat','chart.php','control/expressInstall.swf','control/swfobject.js','control/open-flash-chart.swf') as \$old)
+		\@unlink(\$old);
+
 	\@rename('index.php','index.php.BACKUP');
 	\@rename('.htaccess','.htaccess.BACKUP');
 
@@ -242,7 +244,6 @@ FORM;
 	deploy('index.php');
 	deploy('rsslib.php');
 	deploy('feeds.php');
-	deploy('chart.php');
 	deploy('robots.txt');
 
 	mkdir_chmod('imagens', 0755);

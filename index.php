@@ -20,13 +20,12 @@
 
 error_reporting(0);
 
-define('VERSAO',	'5.3');
+define('VERSAO',	'5.5');
 define('CLIQUE',	'http://clique.secundum.com.br/');
 define('SISTEMA',	'http://sistema.secundum.com.br/');
 
 define('ADMIN',		'admin');
 define('CLEANUP',	'cleanup');
-define('HIST',		'hist.dat');
 define('LAYOUT',	'layout');
 define('TEMPLATE',	LAYOUT . DIRECTORY_SEPARATOR . 'alldefs.ini');
 
@@ -205,25 +204,9 @@ function furl(x) {
 	x = x.replace(/\s/g, '');
 	return x;
 }
-
-swfobject.embedSWF(
-\"controle/open-flash-chart.swf\", \"stats\",
-\"635\", \"500\", \"9.0.0\", \"controle/expressInstall.swf\",
-{\"data-file\":\"chart.php\",\"loading\":\"Carregando...\"} );
 </script>
 <script language=\"javascript\" type=\"text/javascript\" src=\"controle/niceforms.js\"></script>
 <link rel=\"stylesheet\" type=\"text/css\" media=\"all\" href=\"controle/niceforms.css\" />
-<style type=\"text/css\"> 
-.sunken {
-border-color: #666661 #FFFFFF #FFFFFF #666661;
-border-style: solid;
-border-width: 1px;
-width: 635px;
-height: 500px;
-margin: 0px;
-padding: 0px;
-}
-</style>
 </head>
 <body>
 <div id=\"container\">
@@ -295,10 +278,6 @@ padding: 0px;
 		}
 
 		$google	= floor(googleidx($CFG['LOJA_URL']) / 1000) . 'k';
-		$end	= hist(false, 1);
-		$begin	= hist(false, 2);
-
-		$since	= utf8_encode(strftime($CFG['STRFTIME'], $begin[2]));
 
 		$update = '';
 		if (VERSAO != $CFG['UPDATE']) {
@@ -318,25 +297,9 @@ $update
 </fieldset>
 </form>
 <fieldset>
-<legend>$CFG[ADMIN_STATS]</legend>
-<div class=\"sunken\">
-<div id=\"stats\"></div>
-</div>
-<dl>
-<dt><label>$CFG[ADMIN_ONLINE]</label></dt>
-<dd>$since</dd>
-</dl>
 <dl>
 <dt><label>$CFG[ADMIN_INDEX]</label></dt>
 <dd>$google</dd>
-</dl>
-<dl>
-<dt><label>$CFG[ADMIN_HITS]</label></dt>
-<dd>$end[0]</dd>
-</dl>
-<dl>
-<dt><label>$CFG[ADMIN_CLICKS]</label></dt>
-<dd>$end[1]</dd>
 </dl>
 $CFG[ADMIN_OBS]
 </fieldset>
@@ -378,7 +341,6 @@ $CFG[SECUNDUM_CPANEL]
 ";
 	}
 } elseif ($params[0] == 'clique') {
-	hist(true);
 
 	header(sprintf('Location: %s%s', CLIQUE, implode('/', array_slice($params, 1))));
 } elseif ($LOCAL && !empty($localpath) && file_exists($localpath) && (substr($localpath, -4) != '.ini')) {
@@ -386,13 +348,6 @@ $CFG[SECUNDUM_CPANEL]
 	fix_header($localpath);
 	echo $data;
 } else {
-	hist();
-
-	/*
-	header('Cache-Control: no-cache, must-revalidate');
-	header('Expires: Sat, 26 Jul 1997 05:00:00 GMT');
-	header('Pragma: no-cache');
-	*/
 	header('Content-Type: text/html; charset=utf-8');
 	@ob_start('ob_gzhandler');
 
@@ -651,63 +606,6 @@ function get_include_contents($filename) {
 		return $contents;
 	}
 	return false;
-}
-
-function hist($is_click = false, $mode = 0) {
-	$now	= ceil(time() / 3600) * 3600;
-	$since	= $now;
-	$pgs	= 0;
-	$clk	= 0;
-
-	@touch(HIST);
-
-	// waiting until file will be locked for writing (1000 milliseconds as timeout)
-	if ($fp = fopen(HIST, $mode ? 'rb' : 'r+b')) {
-		$startTime = microtime();
-		do {
-			$canWrite = flock($fp, LOCK_EX);
-			// If lock not obtained sleep for 0 - 100 milliseconds, to avoid collision and CPU load
-			if (!$canWrite) {
-				usleep(round(rand(0, 100) * 1000));
-			}
-		} while (!$canWrite && ((microtime() - $startTime) < 1000));
-
-		// file was locked so now we can store information
-		if ($canWrite) {
-			if ($mode != 2) {
-				fseek($fp, -12, SEEK_END);
-			}
-
-			$buf = fread($fp, 12);
-			if ($buf) {
-				$row = unpack('Nstamp/Npgs/Nclk', $buf);
-
-				if ($row['stamp'] == $now) {
-					fseek($fp, -12, SEEK_END);
-				} else {
-					$since = $row['stamp'];
-					fseek($fp, 0, SEEK_END);
-				}
-
-				$pgs = $row['pgs'];
-				$clk = $row['clk'];
-			}
-
-			if ($mode == 0) {
-				if ($is_click) {
-					++$clk;
-				} else {
-					++$pgs;
-				}
-
-				fwrite($fp, pack('N*', $now, $pgs, $clk));
-			}
-		}
-
-		fclose($fp);
-	}
-
-	return array($pgs, $clk, $since);
 }
 
 function googleidx($site) {
