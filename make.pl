@@ -208,10 +208,7 @@ HEAD;
 			echo <<<FORM
 <form action="" method="post" name="instalar">
 <input type="hidden" value="\$params" name="params">
-<select name="sis">
-<option value="sistema.secundum.com.br">Loja BR</option>
-<option value="sislatina.secundum.com.br">Tienda Libre</option>
-</select>
+<input type="hidden" value="sistema.secundum.com.br" name="sis">
 <input type="submit" value="Instalar!">
 </form>
 FORM;
